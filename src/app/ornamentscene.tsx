@@ -118,7 +118,7 @@ export default function OrnamentScene({
 
     const canvas = renderer.domElement;
     canvas.setAttribute("aria-hidden", "true");
-    canvas.className = "pointer-events-none fixed inset-0 z-10 h-full w-full";
+    canvas.className = "pointer-events-none fixed inset-0 z-30 h-full w-full";
     container.appendChild(canvas);
 
     const onContextLost = (e: Event) => {
@@ -179,7 +179,9 @@ export default function OrnamentScene({
     const center = new THREE.Vector3();
     let artWidth = 1;
     let centerShiftZ = 0;
+    let centerShiftX = 0;
     let sepScale = SEP_SCALE_MAX;
+    let currentPpu = 1;
     let sepST: ScrollTrigger | null = null;
     let scrollActive = false;
 
@@ -203,68 +205,46 @@ export default function OrnamentScene({
 
       // piksel per unit dunia, supaya lebar ornamen = lebar kotak anchor
       const ppu = (a.width * TRACE_RATIO) / artWidth;
-      const cx = a.left - host.left + a.width / 2;
-      const cy = a.top - host.top + a.height / 2;
+      currentPpu = ppu;
+
+      // Ambil posisi scroll saat ini agar koordinat anchor Hero selalu invariant
+      // (a.top dipengaruhi window.scrollY saat ini, sehingga kita tambahkan scrollY agar nilainya tidak bergeser ke atas saat refresh)
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      const scrollX = window.scrollX || document.documentElement.scrollLeft || 0;
+
+      const heroCY = a.top + scrollY - host.top + a.height / 2;
+      const heroCX = a.left + scrollX - host.left + a.width / 2;
 
       const dist = H / ppu / (2 * Math.tan(THREE.MathUtils.degToRad(FOV) / 2));
-      const xc = center.x - (cx - W / 2) / ppu;
-      const zc = center.z - (cy - H / 2) / ppu;
+      const xc = center.x - (heroCX - W / 2) / ppu;
+      const zc = center.z - (heroCY - H / 2) / ppu;
 
-      // Jarak vertikal dari posisi ornamen di hero ke tengah layar (Z+ = ke bawah)
-      centerShiftZ = -(cy - H / 2) / ppu;
+      // Hitung pergeseran posisi ornamen dari Hero ke About anchor
+      const aboutAnchor = document.querySelector("#about-ornament-anchor");
+      const aboutEl = document.querySelector("#tentang");
 
-      // Hitung penyebaran proporsional agar potongan tidak terlalu dekat dengan tepi viewport
-      const isDesktop = W >= 1024;
-      const isTablet = W >= 640 && W < 1024;
+      let shiftZ = -(heroCY - H / 2) / ppu;
+      let shiftX = 0;
+      let scaleRatio = 1.0;
 
-      let spreadPx = W * 0.25;
-      if (isDesktop) {
-        spreadPx = Math.min(W * 0.25, 360); // Jarak aman yang lega dari tepi viewport
-      } else if (isTablet) {
-        spreadPx = Math.min(W * 0.23, 210);
-      } else {
-        spreadPx = Math.min(W * 0.19, 90);
+      if (aboutAnchor && aboutEl) {
+        const abRect = aboutAnchor.getBoundingClientRect();
+        // Cari container sticky dari About anchor (div sticky top-0 h-screen)
+        const stickyParent = (aboutAnchor.closest(".sticky") as HTMLElement) || aboutEl;
+        const stickyRect = stickyParent.getBoundingClientRect();
+
+        // Posisi target About anchor di viewport saat sticky section About aktif (top = 0)
+        const targetYInViewport = abRect.top - stickyRect.top + abRect.height / 2;
+        const targetXInViewport = abRect.left - stickyRect.left + abRect.width / 2;
+
+        shiftZ = (targetYInViewport - heroCY) / ppu;
+        shiftX = (targetXInViewport - heroCX) / ppu;
+        scaleRatio = Math.max(0.7, Math.min(1.3, abRect.width / (a.width || 1)));
       }
 
-      const sepX = spreadPx / ppu;
-      const sepZF = -(Math.min(H * 0.14, 110)) / ppu;
-      const sepZA = +(Math.min(H * 0.04, 35)) / ppu;
-      const sepZR = +(Math.min(H * 0.06, 50)) / ppu;
-
-      sepScale = isDesktop ? 0.70 : (isTablet ? 0.62 : 0.54);
-
-      separationTargets = {
-        A: {
-          x: -sepX,
-          z: sepZA,
-          lift: 0.10 * artWidth,
-          rotX: 0.24,
-          rotY: -0.62,
-          rotZ: 0.18,
-          scale: 0.96,
-          delay: 0,
-        },
-        F: {
-          x: 0,
-          z: sepZF,
-          lift: 0.18 * artWidth,
-          rotX: 0.38,
-          rotY: 0.12,
-          rotZ: 0,
-          scale: 0.90,
-          delay: 0.08,
-        },
-        R: {
-          x: sepX,
-          z: sepZR,
-          lift: 0.10 * artWidth,
-          rotX: -0.20,
-          rotY: 0.62,
-          rotZ: -0.20,
-          scale: 0.96,
-          delay: 0.16,
-        },
-      };
+      centerShiftZ = shiftZ;
+      centerShiftX = shiftX;
+      sepScale = scaleRatio;
 
       camera.position.set(xc, dist, zc);
       camera.lookAt(xc, 0, zc);
@@ -272,104 +252,65 @@ export default function OrnamentScene({
     };
 
     let visible = true;
-    let lastY = window.scrollY;
+    let lastY = typeof window !== "undefined" ? window.scrollY : 0;
     let smoothP = 0;
     let smoothTiltX = 0;
-    let lastOpacity = -1;
 
     const tick = (_time: number, deltaMs: number) => {
       const dt = Math.min(Math.max(deltaMs, 1), 50) / 1000;
       const y = window.scrollY;
 
-      // Target progress dari scroll
+      // Target progress dari scroll perpindahan Hero -> About
       let targetP = 0;
-      if (sepST) {
-        targetP = clamp01((y - sepST.start) / (sepST.end - sepST.start || 1));
+      if (sepST && sepST.end > sepST.start) {
+        targetP = clamp01((y - sepST.start) / (sepST.end - sepST.start));
       }
 
-      // Exponential damping untuk kelembaman elastis (anti-kaku)
+      // Exponential damping untuk kelembaman elastis yang ultra-halus (anti-snap)
       smoothP += (targetP - smoothP) * (1 - Math.exp(-dt * 6.5));
 
-      // Progres fade canvas setelah melewati section About
-      let fadeP = 0;
-      if (sepST) {
-        const vh = window.innerHeight;
-        const fStart = sepST.end + vh * 0.35;
-        const fEnd = fStart + vh * 0.75;
-        fadeP = clamp01((y - fStart) / (fEnd - fStart));
-      }
-      const opacity = 1 - smoothstep(fadeP);
-      if (Math.abs(opacity - lastOpacity) > 0.001) {
-        canvas.style.opacity = String(opacity);
-        lastOpacity = opacity;
-      }
-
-      // Animasi transisi pemisahan potongan
+      // Animasi transisi perpindahan ornamen 3D ke posisi About secara continuous (tanpa jeda terhenti)
       if (scrollActive && parts.length) {
-        const p = smoothP;
-        const eAll = easeInOutCubic(p);
+        const landingProgress = smoothP;
+        const eLanding = easeInOutCubic(landingProgress);
+        const arc = Math.sin(Math.PI * landingProgress) * (1 - eLanding); // lift halus hanya saat meluncur turun
 
-        scrollRoot.position.z = centerShiftZ * eAll;
-        scrollRoot.scale.setScalar(THREE.MathUtils.lerp(1, sepScale, eAll));
+        const aboutEl = document.querySelector("#tentang");
+        const abTop = aboutEl ? aboutEl.getBoundingClientRect().top : 0;
+        const scrollAwayZ = Math.min(0, abTop) / (currentPpu || 1);
+
+        // Posisi ornamen: meluncur turun mulus ke About anchor dan bergerak bersama About saat scroll naik
+        scrollRoot.position.x = centerShiftX * eLanding;
+        scrollRoot.position.z = centerShiftZ * eLanding + scrollAwayZ;
+        scrollRoot.position.y = arc * 0.12 * artWidth; // meliuk sedikit ke arah kamera saat berpindah
+        scrollRoot.scale.setScalar(THREE.MathUtils.lerp(1, sepScale, eLanding));
 
         const time = performance.now() * 0.001;
-        const floatWeight = smoothstep(p); // semakin terpisah, semakin bebas mengapung
+        // Ornamen melayang tenang (subtle floating breathing)
+        const fY = Math.sin(time * 1.5) * 0.016;
+        const fRotX = Math.cos(time * 1.2) * 0.022;
+        const fRotZ = Math.sin(time * 1.4) * 0.025;
+
+        // Rotasi fluida saat berpindah turun (meredup halus ke 0 saat sudah sampai di About)
+        const glideRotX = Math.sin(Math.PI * landingProgress) * (1 - eLanding) * 0.28;
+        const glideRotY = Math.sin(Math.PI * landingProgress) * (1 - eLanding) * 0.18;
 
         parts.forEach((part) => {
-          const cfg = separationTargets[part.key];
-          const pp = clamp01((p - cfg.delay) / STAGGER_SPAN);
-          const e = easeInOutCubic(pp);
-          const arc = Math.sin(Math.PI * pp); // lengkungan lift saat transisi
-
-          // Floating breathing khas karet mengapung di udara
-          let fY = 0;
-          let fRotX = 0;
-          let fRotZ = 0;
-          let scrollRotX = 0;
-
-          if (part.key === "A") {
-            fY = Math.sin(time * 1.6) * 0.016 * floatWeight;
-            fRotX = Math.cos(time * 1.2) * 0.025 * floatWeight;
-            fRotZ = Math.sin(time * 1.4) * 0.035 * floatWeight;
-          } else if (part.key === "F") {
-            fY = Math.sin(time * 1.3 + 1.5) * 0.022 * floatWeight;
-            fRotX = Math.cos(time * 1.5 + 1.0) * 0.045 * floatWeight;
-            fRotZ = 0; // Tanpa rotasi sumbu Z
-            // Memutar sumbu X satu putaran penuh (360° / 2π) mengikuti scroll pengguna
-            scrollRotX = Math.PI * 2 * e;
-          } else if (part.key === "R") {
-            fY = Math.sin(time * 1.7 + 3.0) * 0.016 * floatWeight;
-            fRotX = Math.cos(time * 1.3 + 2.0) * 0.025 * floatWeight;
-            fRotZ = -Math.sin(time * 1.4 + 2.0) * 0.035 * floatWeight;
-          }
-
-          part.sep.position.set(
-            part.home.x + cfg.x * e,
-            cfg.lift * arc + fY,
-            part.home.z + cfg.z * e
-          );
-
-          part.sep.rotation.set(
-            cfg.rotX * e + scrollRotX + fRotX,
-            cfg.rotY * e,
-            cfg.rotZ * e + fRotZ
-          );
-
-          // Efek elastisitas karet halus saat bergerak (squash & stretch)
-          const stretch = 1 + arc * 0.04;
-          const s = THREE.MathUtils.lerp(1, cfg.scale, e);
-          part.sep.scale.set(s * stretch, s, s * stretch);
+          part.sep.position.set(part.home.x, fY, part.home.z);
+          part.sep.rotation.set(fRotX, 0, fRotZ);
+          part.sep.scale.set(1, 1, 1);
         });
 
         // Dynamic velocity tilt yang halus mengikuti scroll
         const v = (y - lastY) / dt;
         const targetTiltX = THREE.MathUtils.clamp(v / 3500, -1, 1) * 0.12;
         smoothTiltX += (targetTiltX - smoothTiltX) * (1 - Math.exp(-dt * 5));
-        scrollRoot.rotation.x = smoothTiltX * (1 - fadeP);
+        scrollRoot.rotation.x = glideRotX + smoothTiltX;
+        scrollRoot.rotation.y = glideRotY;
       }
       lastY = y;
 
-      if (visible && opacity > 0.002) renderer.render(scene, camera);
+      if (visible) renderer.render(scene, camera);
     };
 
     const init = async () => {
@@ -420,107 +361,128 @@ export default function OrnamentScene({
       const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       scrollActive = !reduce;
 
-      // ===== Scroll: potongan berpisah saat berpindah ke section About =====
-      // Mulai langsung dari scroll 0 (tanpa "zona mati"), berlaku dua arah.
+      // ===== Scroll: ornamen berpindah turun ke anchor About saat scroll =====
       const aboutEl = document.querySelector("#tentang");
       if (aboutEl) {
         sepST = ScrollTrigger.create({
           trigger: aboutEl,
-          start: "top 85%", // Mulai transisi anggun saat section About mulai naik
-          end: "top 15%",  // Selesai terpisah tepat saat teks About di tengah layar
+          start: "top bottom", // Mulai meluncur saat About mulai muncul dari bawah viewport
+          end: "top top",      // Selesai mendarat mulus tepat saat About tiba di atas viewport (tanpa jeda pause)
           invalidateOnRefresh: true,
         });
         cleanups.push(() => {
           sepST?.kill();
           sepST = null;
-          canvas.style.opacity = "";
         });
+
+        // Sinkronkan progress scroll seketika jika halaman dimuat pada posisi Y tertentu (cegah lonjakan)
+        ScrollTrigger.refresh();
+        const initY = window.scrollY || 0;
+        if (sepST.end > sepST.start) {
+          smoothP = clamp01((initY - sepST.start) / (sepST.end - sepST.start));
+        }
       }
 
-      if (reduce) return; // langsung tampil menyatu
-
-      // Set posisi awal potongan sebelum entrance
-      parts.forEach((p) => {
-        const e = ENTRANCE[p.key];
-        p.pivot.position.set(e.pos[0], e.pos[1], e.pos[2]);
-        p.pivot.rotation.set(e.rot[0], e.rot[1], e.rot[2]);
-        p.pivot.scale.set(e.scale, e.scale, e.scale);
-      });
-
-      let entranceTimeline: gsap.core.Timeline | null = null;
-
-      // ===== Entrance: tiga potongan terbang masuk lalu menyatu di tengah =====
-      const triggerEntrance = () => {
-        const tl = gsap.timeline();
-        entranceTimeline = tl;
-        parts.forEach((p) => {
-          const e = ENTRANCE[p.key];
-          tl.to(
-            p.pivot.position,
-            { x: 0, y: 0, z: 0, duration: 2.1, ease: "expo.out" },
-            e.at
-          );
-          tl.to(
-            p.pivot.rotation,
-            { x: 0, y: 0, z: 0, duration: 2.4, ease: "power4.out" },
-            e.at
-          );
-          tl.to(
-            p.pivot.scale,
-            { x: 1, y: 1, z: 1, duration: 1.8, ease: "power3.out" },
-            e.at
-          );
-        });
-        // hentakan kecil saat ketiganya "klik" bersatu
-        tl.fromTo(
-          assembly.scale,
-          { x: 1.04, z: 1.04 },
-          { x: 1, z: 1, duration: 1.4, ease: "elastic.out(1, 0.45)" },
-          1.5
-        );
-
-        // setelah menyatu: bergerak sangat pelan supaya terasa hidup
-        tl.add(() => {
-          parts.forEach((p, i) => {
-            const dir = i % 2 ? -1 : 1;
-            gsap.to(p.pivot.position, {
-              z: dir * 0.0015,
-              duration: 3.2 + i * 0.7,
-              ease: "sine.inOut",
-              yoyo: true,
-              repeat: -1,
-            });
-            gsap.to(p.pivot.rotation, {
-              y: dir * 0.012,
-              duration: 4 + i * 0.5,
-              ease: "sine.inOut",
-              yoyo: true,
-              repeat: -1,
-            });
+      // Animasi pernapasan halus saat potongan sudah menyatu
+      const startIdleBreathing = () => {
+        parts.forEach((p, i) => {
+          const dir = i % 2 ? -1 : 1;
+          gsap.to(p.pivot.position, {
+            z: dir * 0.0015,
+            duration: 3.2 + i * 0.7,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: -1,
+          });
+          gsap.to(p.pivot.rotation, {
+            y: dir * 0.012,
+            duration: 4 + i * 0.5,
+            ease: "sine.inOut",
+            yoyo: true,
+            repeat: -1,
           });
         });
       };
 
-      let hasTriggered = false;
-      const onTrigger = () => {
-        if (hasTriggered || disposed) return;
-        hasTriggered = true;
-        triggerEntrance();
-      };
+      const isScrolledPastHero = (window.scrollY || 0) > 50;
+      let entranceTimeline: gsap.core.Timeline | null = null;
 
-      const isLifted =
-        typeof window !== "undefined" &&
-        Boolean((window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted);
-
-      if (isLifted) {
-        onTrigger();
+      // Jika prefers-reduced-motion ATAU pengguna me-refresh saat sudah berada di section bawah (misal About):
+      // Potongan langsung dalam keadaan utuh menyatu di anchornya, tidak terbang ke angkasa.
+      if (reduce || isScrolledPastHero) {
+        parts.forEach((p) => {
+          p.pivot.position.set(0, 0, 0);
+          p.pivot.rotation.set(0, 0, 0);
+          p.pivot.scale.set(1, 1, 1);
+        });
+        assembly.scale.set(1, 1, 1);
+        if (!reduce) {
+          startIdleBreathing();
+        }
       } else {
-        window.addEventListener("hero:curtain-lift", onTrigger, { once: true });
-        cleanups.push(() => window.removeEventListener("hero:curtain-lift", onTrigger));
+        // Set posisi awal potongan sebelum entrance Hero
+        parts.forEach((p) => {
+          const e = ENTRANCE[p.key];
+          p.pivot.position.set(e.pos[0], e.pos[1], e.pos[2]);
+          p.pivot.rotation.set(e.rot[0], e.rot[1], e.rot[2]);
+          p.pivot.scale.set(e.scale, e.scale, e.scale);
+        });
+
+        // ===== Entrance: tiga potongan terbang masuk lalu menyatu di tengah =====
+        const triggerEntrance = () => {
+          const tl = gsap.timeline();
+          entranceTimeline = tl;
+          parts.forEach((p) => {
+            const e = ENTRANCE[p.key];
+            tl.to(
+              p.pivot.position,
+              { x: 0, y: 0, z: 0, duration: 2.1, ease: "expo.out" },
+              e.at
+            );
+            tl.to(
+              p.pivot.rotation,
+              { x: 0, y: 0, z: 0, duration: 2.4, ease: "power4.out" },
+              e.at
+            );
+            tl.to(
+              p.pivot.scale,
+              { x: 1, y: 1, z: 1, duration: 1.8, ease: "power3.out" },
+              e.at
+            );
+          });
+          // hentakan kecil saat ketiganya "klik" bersatu
+          tl.fromTo(
+            assembly.scale,
+            { x: 1.04, z: 1.04 },
+            { x: 1, z: 1, duration: 1.4, ease: "elastic.out(1, 0.45)" },
+            1.5
+          );
+
+          // setelah menyatu: bergerak sangat pelan supaya terasa hidup
+          tl.add(startIdleBreathing);
+        };
+
+        let hasTriggered = false;
+        const onTrigger = () => {
+          if (hasTriggered || disposed) return;
+          hasTriggered = true;
+          triggerEntrance();
+        };
+
+        const isLifted =
+          typeof window !== "undefined" &&
+          Boolean((window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted);
+
+        if (isLifted) {
+          onTrigger();
+        } else {
+          window.addEventListener("hero:curtain-lift", onTrigger, { once: true });
+          cleanups.push(() => window.removeEventListener("hero:curtain-lift", onTrigger));
+        }
       }
 
-      // Parallax: bagian depan ornamen menghadap ke arah cursor
-      if (window.matchMedia("(pointer: fine)").matches) {
+      // Parallax: bagian depan ornamen menghadap ke arah cursor — SELALU aktif di perangkat dengan pointer fine
+      if (!reduce && window.matchMedia("(pointer: fine)").matches) {
         // Rotasi — ornamen miring mengikuti posisi mouse
         const rx = gsap.quickTo(assembly.rotation, "x", { duration: 0.9, ease: "power3.out" });
         const rz = gsap.quickTo(assembly.rotation, "z", { duration: 0.9, ease: "power3.out" });
@@ -532,16 +494,16 @@ export default function OrnamentScene({
         const baseZ = assembly.position.z;
 
         const onMove = (ev: PointerEvent) => {
-          const nx = ev.clientX / window.innerWidth - 0.5;   // -0.5 .. 0.5
+          const nx = ev.clientX / window.innerWidth - 0.5; // -0.5 .. 0.5
           const ny = ev.clientY / window.innerHeight - 0.5;
 
-          // Rotasi: permukaan depan menghadap ke cursor
-          rx(ny * 0.45);     // miring atas-bawah
-          rz(nx * -0.45);    // miring kiri-kanan
+          // Rotasi: permukaan depan menghadap ke arah kursor
+          rx(ny * 0.55); // miring atas-bawah
+          rz(nx * -0.55); // miring kiri-kanan
 
-          // Translasi: geser posisi untuk parallax depth
-          tx(baseX + nx * 0.025);
-          tz(baseZ + ny * 0.018);
+          // Translasi: geser posisi untuk kedalaman parallax 3D yang nyata
+          tx(baseX + nx * 0.045);
+          tz(baseZ + ny * 0.035);
         };
         window.addEventListener("pointermove", onMove);
         cleanups.push(() => window.removeEventListener("pointermove", onMove));
@@ -601,7 +563,7 @@ export default function OrnamentScene({
     <div
       ref={containerRef}
       aria-hidden
-      className="pointer-events-none fixed inset-0 z-10 h-full w-full"
+      className="pointer-events-none fixed inset-0 z-30 h-full w-full"
     />
   );
 }

@@ -12,6 +12,7 @@ import ScrambleText from "./ScrambleText";
 const navLinks = [
   { label: "Beranda", href: "#" },
   { label: "Tentang", href: "#tentang" },
+  { label: "Karya", href: "#works" },
   { label: "Pengalaman", href: "#pengalaman" },
 ];
 

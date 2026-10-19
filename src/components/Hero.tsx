@@ -8,7 +8,6 @@ import CtaButton from "./CtaButton";
 import RunningHeadline from "./RunningHeadline";
 import SocialLinks from "./SocialLinks";
 import ResumeButton from "./ResumeButton";
-import BurnPreloader from "./BurnPreloader";
 import OrnamentScene from "@/app/ornamentscene";
 
 gsap.registerPlugin(useGSAP);
@@ -16,7 +15,8 @@ gsap.registerPlugin(useGSAP);
 export default function Hero() {
   const root = useRef<HTMLElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
-  const heroEntranceStarted = useRef(false);
+  const curtainRef = useRef<HTMLDivElement>(null);
+  const fillLogoRef = useRef<HTMLDivElement>(null);
 
   const [fallback, setFallback] = useState(false);
   const handleUnsupported = useCallback(() => setFallback(true), []);
@@ -34,54 +34,6 @@ export default function Hero() {
     }
   }, [fallback]);
 
-  // Callback saat api mulai merambat naik dari bawah membakar preloader
-  const startHeroEntrance = useCallback(() => {
-    if (heroEntranceStarted.current) return;
-    heroEntranceStarted.current = true;
-
-    if (typeof window !== "undefined") {
-      (window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted = true;
-      window.dispatchEvent(new CustomEvent("hero:curtain-lift"));
-    }
-
-    const tl = gsap.timeline();
-
-    // 1. Gambar siluet orang muncul perlahan dari bawah seiring kobaran api naik
-    tl.to(
-      "[data-person]",
-      { autoAlpha: 1, y: 0, duration: 1.35, ease: "power3.out" },
-      "+=0.05"
-    );
-
-    // 2. Heading text headline muncul menyusul
-    tl.to(
-      "[data-heading]",
-      { autoAlpha: 1, y: 0, duration: 1.15, ease: "power4.out" },
-      "-=0.7"
-    );
-
-    if (fallback) {
-      tl.to(
-        "[data-ornament]",
-        {
-          clipPath: "inset(0% 0% 0% 0%)",
-          scale: 1,
-          yPercent: 0,
-          duration: 1.8,
-          ease: "expo.out",
-        },
-        "-=0.7"
-      );
-    }
-
-    // 3. Navbar, tombol resume ticket, dan tombol CTA masuk
-    tl.to(
-      "[data-nav]",
-      { autoAlpha: 1, y: 0, duration: 0.85, stagger: 0.08 },
-      "-=0.6"
-    );
-  }, [fallback]);
-
   useGSAP(
     () => {
       const mm = gsap.matchMedia();
@@ -92,28 +44,116 @@ export default function Hero() {
           (window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted = true;
           window.dispatchEvent(new CustomEvent("hero:curtain-lift"));
         }
+        if (curtainRef.current) curtainRef.current.style.display = "none";
         gsap.set("[data-reveal]", { autoAlpha: 1 });
       });
 
       mm.add("(prefers-reduced-motion: no-preference)", () => {
-        if (typeof window !== "undefined") {
-          (window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted = false;
+        const isScrolledPastHero = (window.scrollY || 0) > 50;
+
+        if (isScrolledPastHero) {
+          if (typeof window !== "undefined") {
+            (window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted = true;
+            window.dispatchEvent(new CustomEvent("hero:curtain-lift"));
+          }
+          if (curtainRef.current) curtainRef.current.style.display = "none";
+          gsap.set("[data-reveal]", { autoAlpha: 1 });
+          gsap.set("[data-heading]", { autoAlpha: 1, y: 0 });
+          gsap.set("[data-person]", { autoAlpha: 1, y: 0 });
+          gsap.set("[data-nav]", { autoAlpha: 1, y: 0 });
+        } else {
+          if (typeof window !== "undefined") {
+            (window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted = false;
+          }
+
+          // Posisi awal elemen Hero sebelum tirai hitam terangkat
+          gsap.set("[data-heading]", { autoAlpha: 0, y: 35 });
+          gsap.set("[data-person]", { autoAlpha: 0, y: 70 });
+          gsap.set("[data-nav]", { autoAlpha: 0, y: -15 });
+
+          if (fallback) {
+            gsap.set("[data-ornament]", {
+              autoAlpha: 1,
+              clipPath: "inset(0% 50% 0% 50%)",
+              scale: 0.9,
+              yPercent: 14,
+              transformOrigin: "50% 50%",
+            });
+          }
+
+          // ===== Timeline Intro Layar Hitam Preloader (Logo Putih -> Merah -> Fade Out) =====
+          const curtain = curtainRef.current;
+          const fillLogo = fillLogoRef.current;
+
+          const tl = gsap.timeline();
+
+        // 1. Logo putih perlahan menjadi merah dari bawah ke atas
+        if (fillLogo) {
+          tl.fromTo(
+            fillLogo,
+            { clipPath: "inset(100% 0% 0% 0%)" },
+            {
+              clipPath: "inset(0% 0% 0% 0%)",
+              duration: 1.6,
+              ease: "power2.inOut",
+            }
+          );
         }
 
-        // Posisi awal elemen Hero sebelum terungkap oleh api
-        gsap.set("[data-heading]", { autoAlpha: 0, y: 35 });
-        gsap.set("[data-person]", { autoAlpha: 0, y: 70 });
-        gsap.set("[data-nav]", { autoAlpha: 0, y: -15 });
+        // Jeda sekejap setelah logo penuh merah
+        tl.to({}, { duration: 0.25 });
+
+        // 2. Layar hitam fade out secara halus membuka panggung Hero
+        tl.to(curtain, {
+          autoAlpha: 0,
+          duration: 1.1,
+          ease: "power2.inOut",
+          onStart: () => {
+            // Picu animasi ornamen 3D via custom event tanpa menyebabkan re-render
+            if (typeof window !== "undefined") {
+              (window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted = true;
+              window.dispatchEvent(new CustomEvent("hero:curtain-lift"));
+            }
+          },
+          onComplete: () => {
+            if (curtain) curtain.style.display = "none";
+          },
+        });
+
+        // 3. GAMBAR PNG ORANG MUNCUL TERLEBIH DAHULU DARI BAWAH
+        tl.to(
+          "[data-person]",
+          { autoAlpha: 1, y: 0, duration: 1.35, ease: "power3.out" },
+          "-=0.7"
+        );
+
+        // 4. SETELAH GAMBAR PNG ORANG MUNCUL, BARULAH TEXT HEADING MUNCUL
+        tl.to(
+          "[data-heading]",
+          { autoAlpha: 1, y: 0, duration: 1.15, ease: "power4.out" },
+          "+=0.08"
+        );
 
         if (fallback) {
-          gsap.set("[data-ornament]", {
-            autoAlpha: 1,
-            clipPath: "inset(0% 50% 0% 50%)",
-            scale: 0.9,
-            yPercent: 14,
-            transformOrigin: "50% 50%",
-          });
+          tl.to(
+            "[data-ornament]",
+            {
+              clipPath: "inset(0% 0% 0% 0%)",
+              scale: 1,
+              yPercent: 0,
+              duration: 1.8,
+              ease: "expo.out",
+            },
+            "-=0.7"
+          );
         }
+
+        // 5. Navbar dan tombol CTA menyusul masuk
+        tl.to(
+          "[data-nav]",
+          { autoAlpha: 1, y: 0, duration: 0.85, stagger: 0.08 },
+          "-=0.6"
+        );
 
         // Fallback ornamen melayang pelan setelah muncul
         if (fallback) {
@@ -123,9 +163,40 @@ export default function Hero() {
             ease: "sine.inOut",
             yoyo: true,
             repeat: -1,
-            delay: 2.2,
+            delay: 2,
           });
         }
+      }
+
+      // Parallax mengikuti mouse (hanya perangkat dengan pointer halus)
+      const pointer = gsap.matchMedia();
+        pointer.add("(pointer: fine)", () => {
+          const ox = gsap.quickTo("[data-parallax]", "x", {
+            duration: 0.9,
+            ease: "power3.out",
+          });
+          const oy = gsap.quickTo("[data-parallax]", "y", {
+            duration: 0.9,
+            ease: "power3.out",
+          });
+          const px = gsap.quickTo("[data-parallax-person]", "x", {
+            duration: 1.2,
+            ease: "power3.out",
+          });
+
+          const onMove = (e: PointerEvent) => {
+            const nx = e.clientX / window.innerWidth - 0.5;
+            const ny = e.clientY / window.innerHeight - 0.5;
+            ox(nx * 26);
+            oy(ny * 16);
+            px(nx * 14);
+          };
+
+          window.addEventListener("pointermove", onMove);
+          return () => window.removeEventListener("pointermove", onMove);
+        });
+
+        return () => pointer.revert();
       });
     },
     { scope: root, dependencies: [fallback] }
@@ -136,10 +207,47 @@ export default function Hero() {
       ref={root}
       className="relative h-svh min-h-[500px] w-full overflow-hidden bg-black bg-[url('/hero-gradient.jpg')] bg-cover bg-center"
     >
-      {/* ===== Transisi Terbakar dari Bawah ke Atas (Burn Reveal) ===== */}
-      <BurnPreloader
-        onBurnStart={startHeroEntrance}
-      />
+      {/* ===== Layar Hitam Preloader: Hanya Logo di Tengah ===== */}
+      <div
+        ref={curtainRef}
+        aria-hidden
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black select-none pointer-events-none will-change-transform"
+      >
+        {/* Logo Putih yang perlahan terisi Merah dari Bawah */}
+        <div className="relative w-[min(38vw,420px)] min-w-[220px] aspect-[1217/431]">
+          {/* Logo Putih (Dasar) */}
+          <div
+            className="absolute inset-0 h-full w-full bg-white opacity-85"
+            style={{
+              maskImage: "url('/logo.svg')",
+              WebkitMaskImage: "url('/logo.svg')",
+              maskSize: "contain",
+              WebkitMaskSize: "contain",
+              maskRepeat: "no-repeat",
+              WebkitMaskRepeat: "no-repeat",
+              maskPosition: "center",
+              WebkitMaskPosition: "center",
+            }}
+          />
+
+          {/* Logo Merah (Terisi Perlahan dari Bawah ke Atas) */}
+          <div
+            ref={fillLogoRef}
+            className="absolute inset-0 h-full w-full bg-flame drop-shadow-[0_0_24px_rgba(255,0,0,0.65)]"
+            style={{
+              maskImage: "url('/logo.svg')",
+              WebkitMaskImage: "url('/logo.svg')",
+              maskSize: "contain",
+              WebkitMaskSize: "contain",
+              maskRepeat: "no-repeat",
+              WebkitMaskRepeat: "no-repeat",
+              maskPosition: "center",
+              WebkitMaskPosition: "center",
+              clipPath: "inset(100% 0% 0% 0%)",
+            }}
+          />
+        </div>
+      </div>
 
       <Navbar />
 

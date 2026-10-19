@@ -1,0 +1,23 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 600' width='960' height='600'>
+  <defs>
+    <linearGradient id='bg4' x1='0' y1='0' x2='1' y2='1'>
+      <stop offset='0%' stop-color='#120412'/>
+      <stop offset='100%' stop-color='#000000'/>
+    </linearGradient>
+  </defs>
+  <rect width='960' height='600' fill='url(#bg4)'/>
+  
+  <g stroke='#ff2244' stroke-width='2' stroke-opacity='0.8' fill='none'>
+    <path d='M60,300 Q200,120 340,300 T620,300 T900,300'/>
+    <path d='M60,300 Q180,80 320,300 T600,300 T900,300' stroke='#ff6600' stroke-opacity='0.6'/>
+    <path d='M60,300 Q220,180 360,300 T640,300 T900,300' stroke='#ffffff' stroke-opacity='0.5'/>
+    <path d='M60,300 Q240,240 380,300 T660,300 T900,300' stroke='#ff0055' stroke-opacity='0.4'/>
+  </g>
+  
+  <text x='480' y='140' fill='#ffffff' font-family='serif' font-size='44' font-weight='normal' text-anchor='middle' letter-spacing='4'>AURA SOUND LAB</text>
+  <text x='480' y='175' fill='#ff3322' font-family='monospace' font-size='12' text-anchor='middle' letter-spacing='3'>GENERATIVE FREQUENCY SYNTHESIS</text>
+
+  <g transform='translate(200, 420)'>
+    <rect x='0' y='35' width='10' height='45' rx='3' fill='#ff2200' fill-opacity='0.4'/><rect x='20' y='21.00818302913173' width='10' height='58.99181697086827' rx='3' fill='#ffffff' fill-opacity='0.52'/><rect x='40' y='22.863793741176877' width='10' height='57.13620625882312' rx='3' fill='#ffffff' fill-opacity='0.64'/><rect x='60' y='33.54756849134869' width='10' height='46.45243150865131' rx='3' fill='#ff2200' fill-opacity='0.76'/><rect x='80' y='44.03898518771315' width='10' height='35.96101481228685' rx='3' fill='#ffffff' fill-opacity='0.88'/><rect x='100' y='49.40984403691226' width='10' height='30.590155963087742' rx='3' fill='#ffffff' fill-opacity='0.4'/><rect x='120' y='51.462125051319795' width='10' height='28.537874948680205' rx='3' fill='#ff2200' fill-opacity='0.52'/><rect x='140' y='56.39609828327664' width='10' height='23.60390171672336' rx='3' fill='#ffffff' fill-opacity='0.64'/><rect x='160' y='69.22648931990196' width='10' height='10.773510680098049' rx='3' fill='#ffffff' fill-opacity='0.76'/><rect x='180' y='88.780072431623' width='10' height='-8.780072431623001' rx='3' fill='#ff2200' fill-opacity='0.88'/><rect x='200' y='106.78909320505657' width='10' height='-26.78909320505657' rx='3' fill='#ffffff' fill-opacity='0.4'/><rect x='220' y='112.02664000220904' width='10' height='-32.026640002209035' rx='3' fill='#ffffff' fill-opacity='0.52'/><rect x='240' y='97.19089381380483' width='10' height='-17.19089381380483' rx='3' fill='#ff2200' fill-opacity='0.64'/><rect x='260' y='64.34420697172902' width='10' height='15.655793028270978' rx='3' fill='#ffffff' fill-opacity='0.76'/><rect x='280' y='25.36048146218569' width='10' height='54.63951853781431' rx='3' fill='#ffffff' fill-opacity='0.88'/><rect x='300' y='-3.306347923175551' width='10' height='83.30634792317555' rx='3' fill='#ff2200' fill-opacity='0.4'/><rect x='320' y='-8.841935240488056' width='10' height='88.84193524048806' rx='3' fill='#ffffff' fill-opacity='0.52'/><rect x='340' y='11.275480120614247' width='10' height='68.72451987938575' rx='3' fill='#ffffff' fill-opacity='0.64'/><rect x='360' y='47.95010206946485' width='10' height='32.04989793053515' rx='3' fill='#ff2200' fill-opacity='0.76'/><rect x='380' y='85.22522499605844' width='10' height='-5.225224996058444' rx='3' fill='#ffffff' fill-opacity='0.88'/><rect x='400' y='108.42243699810626' width='10' height='-28.422436998106257' rx='3' fill='#ffffff' fill-opacity='0.4'/><rect x='420' y='111.10327388400921' width='10' height='-31.10327388400922' rx='3' fill='#ff2200' fill-opacity='0.52'/><rect x='440' y='97.10596542180058' width='10' height='-17.105965421800573' rx='3' fill='#ffffff' fill-opacity='0.64'/><rect x='460' y='76.87934355136004' width='10' height='3.1206564486399664' rx='3' fill='#ffffff' fill-opacity='0.76'/><rect x='480' y='60.66527264259783' width='10' height='19.33472735740217' rx='3' fill='#ff2200' fill-opacity='0.88'/><rect x='500' y='52.782433835469234' width='10' height='27.217566164530766' rx='3' fill='#ffffff' fill-opacity='0.4'/><rect x='520' y='50.3573164887422' width='10' height='29.642683511257804' rx='3' fill='#ffffff' fill-opacity='0.52'/><rect x='540' y='46.941495178030095' width='10' height='33.058504821969905' rx='3' fill='#ff2200' fill-opacity='0.64'/>
+  </g>
+</svg>

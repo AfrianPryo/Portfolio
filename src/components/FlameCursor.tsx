@@ -28,12 +28,19 @@ export default function FlameCursor() {
       fluid?.dispose();
       fluid = null;
     };
+    const handlePointerMove = (e: PointerEvent) => {
+      const isOverWorks = Boolean((e.target as Element | null)?.closest("#works"));
+      canvas.style.opacity = isOverWorks ? "0" : "1";
+    };
     const onChange = () => (mq.matches ? start() : stop());
 
     start();
     mq.addEventListener("change", onChange);
+    window.addEventListener("pointermove", handlePointerMove, { passive: true });
+
     return () => {
       mq.removeEventListener("change", onChange);
+      window.removeEventListener("pointermove", handlePointerMove);
       stop();
     };
   }, []);
@@ -42,7 +49,7 @@ export default function FlameCursor() {
     <canvas
       ref={ref}
       aria-hidden
-      className="pointer-events-none fixed inset-0 z-[60] h-svh w-screen"
+      className="pointer-events-none fixed inset-0 z-[60] h-svh w-screen transition-opacity duration-300"
     />
   );
 }

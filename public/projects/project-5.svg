@@ -1,0 +1,27 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 960 600' width='960' height='600'>
+  <defs>
+    <linearGradient id='bg5' x1='0' y1='0' x2='1' y2='1'>
+      <stop offset='0%' stop-color='#0f0f0f'/>
+      <stop offset='100%' stop-color='#000000'/>
+    </linearGradient>
+  </defs>
+  <rect width='960' height='600' fill='url(#bg5)'/>
+  <rect x='60' y='60' width='840' height='480' rx='16' fill='#171717' stroke='#ff2200' stroke-opacity='0.3' stroke-width='1.5'/>
+  <rect x='60' y='60' width='840' height='50' rx='16' fill='#222222' stroke='#ffffff' stroke-opacity='0.08'/>
+  <text x='100' y='92' fill='#ffffff' font-family='sans-serif' font-weight='bold' font-size='16'>SOLARIS</text>
+  <text x='180' y='92' fill='#ff3322' font-family='monospace' font-size='12'>SYSTEM // v3.0</text>
+  
+  <rect x='90' y='140' width='360' height='360' rx='10' fill='#0f0f0f' stroke='#ffffff' stroke-opacity='0.08'/>
+  <text x='120' y='180' fill='#ffffff' font-family='sans-serif' font-size='24' font-weight='700'>NEO-BRUTALIST</text>
+  <text x='120' y='210' fill='#ff3322' font-family='sans-serif' font-size='24' font-weight='700'>COMMERCE</text>
+  <circle cx='270' cy='330' r='90' fill='#ff2200' fill-opacity='0.15' stroke='#ff2200' stroke-width='2'/>
+  <text x='270' y='336' fill='#ffffff' font-family='sans-serif' font-size='14' font-weight='bold' text-anchor='middle'>COLLECTION '26</text>
+
+  <rect x='480' y='140' width='390' height='165' rx='10' fill='#0f0f0f' stroke='#ffffff' stroke-opacity='0.08'/>
+  <text x='510' y='180' fill='#aaaaaa' font-family='sans-serif' font-size='14'>ARCHITECTURE</text>
+  <text x='510' y='215' fill='#ffffff' font-family='sans-serif' font-size='20' font-weight='bold'>Frictionless Modular Checkout</text>
+
+  <rect x='480' y='335' width='390' height='165' rx='10' fill='#0f0f0f' stroke='#ff2200' stroke-opacity='0.2'/>
+  <text x='510' y='375' fill='#ff3322' font-family='sans-serif' font-size='14'>AWARDS</text>
+  <text x='510' y='410' fill='#ffffff' font-family='sans-serif' font-size='20' font-weight='bold'>CSSDA Site of the Day</text>
+</svg>
