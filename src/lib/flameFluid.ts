@@ -266,7 +266,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     curlF = createFBO(simW, simH, gl.NEAREST);
   };
 
-  const use = (p: (typeof P)[string], texelW: number, texelH: number) => {
+  const useProgram = (p: (typeof P)[string], texelW: number, texelH: number) => {
     gl.useProgram(p.p);
     gl.uniform2f(p.u("uTexel"), 1 / texelW, 1 / texelH);
   };
@@ -306,7 +306,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     const aspect = canvas.width / canvas.height;
     const radius = (cfg.splatRadius / 100) * (aspect > 1 ? aspect : 1);
 
-    use(P.splat, simW, simH);
+    useProgram(P.splat, simW, simH);
     gl.uniform1f(P.splat.u("uAspect"), aspect);
     gl.uniform2f(P.splat.u("uPoint"), x, y);
     gl.uniform1f(P.splat.u("uRadius"), radius);
@@ -315,7 +315,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     blit(velocity.write);
     velocity.swap();
 
-    use(P.splat, dyeW, dyeH);
+    useProgram(P.splat, dyeW, dyeH);
     bindTex(P.splat, "uTarget", dye.read.tex, 0);
     gl.uniform3f(P.splat.u("uColor"), amount, 0, 0);
     gl.uniform1f(P.splat.u("uRadius"), radius * 0.8);
@@ -325,12 +325,12 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
 
   const step = (dt: number) => {
     // curl
-    use(P.curl, simW, simH);
+    useProgram(P.curl, simW, simH);
     bindTex(P.curl, "uVelocity", velocity.read.tex, 0);
     blit(curlF);
 
     // vorticity + buoyancy
-    use(P.vort, simW, simH);
+    useProgram(P.vort, simW, simH);
     bindTex(P.vort, "uVelocity", velocity.read.tex, 0);
     bindTex(P.vort, "uCurl", curlF.tex, 1);
     bindTex(P.vort, "uDye", dye.read.tex, 2);
@@ -341,18 +341,18 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     velocity.swap();
 
     // divergence
-    use(P.div, simW, simH);
+    useProgram(P.div, simW, simH);
     bindTex(P.div, "uVelocity", velocity.read.tex, 0);
     blit(divergence);
 
     // pressure (warm start dengan decay)
-    use(P.clear, simW, simH);
+    useProgram(P.clear, simW, simH);
     bindTex(P.clear, "uTexture", pressure.read.tex, 0);
     gl.uniform1f(P.clear.u("uValue"), 0.8);
     blit(pressure.write);
     pressure.swap();
 
-    use(P.press, simW, simH);
+    useProgram(P.press, simW, simH);
     bindTex(P.press, "uDivergence", divergence.tex, 1);
     for (let i = 0; i < cfg.pressureIterations; i++) {
       bindTex(P.press, "uPressure", pressure.read.tex, 0);
@@ -361,14 +361,14 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     }
 
     // gradient subtract
-    use(P.grad, simW, simH);
+    useProgram(P.grad, simW, simH);
     bindTex(P.grad, "uPressure", pressure.read.tex, 0);
     bindTex(P.grad, "uVelocity", velocity.read.tex, 1);
     blit(velocity.write);
     velocity.swap();
 
     // advect velocity
-    use(P.advect, simW, simH);
+    useProgram(P.advect, simW, simH);
     gl.uniform2f(P.advect.u("uSimTexel"), 1 / simW, 1 / simH);
     bindTex(P.advect, "uVelocity", velocity.read.tex, 0);
     bindTex(P.advect, "uSource", velocity.read.tex, 1);
@@ -378,7 +378,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     velocity.swap();
 
     // advect dye
-    use(P.advect, dyeW, dyeH);
+    useProgram(P.advect, dyeW, dyeH);
     gl.uniform2f(P.advect.u("uSimTexel"), 1 / simW, 1 / simH);
     bindTex(P.advect, "uVelocity", velocity.read.tex, 0);
     bindTex(P.advect, "uSource", dye.read.tex, 1);
@@ -394,7 +394,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    use(P.display, canvas.width, canvas.height);
+    useProgram(P.display, canvas.width, canvas.height);
     bindTex(P.display, "uDye", dye.read.tex, 0);
     gl.uniform1f(P.display.u("uTime"), time);
     gl.uniform1f(P.display.u("uAspect"), canvas.width / canvas.height);
@@ -424,6 +424,11 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     px = x;
     py = y;
     hasPrev = true;
+    if (sleeping && running) {
+      sleeping = false;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    }
   };
   const onLeave = () => {
     hasPrev = false;
@@ -434,9 +439,10 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
   // ---------- loop ----------
   let raf = 0;
   let last = performance.now();
-  let t0 = last;
+  const t0 = last;
   let running = true;
   let idleFrames = 0;
+  let sleeping = false; // true = loop rAF dihentikan total saat api sudah padam
 
   const frame = (now: number) => {
     if (!running) return;
@@ -464,10 +470,15 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     if (idleFrames < 360) {
       step(dt);
       render((now - t0) / 1000);
-    } else if (idleFrames === 360) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT);
+    } else {
+      if (idleFrames === 360) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+      }
+      // Hentikan penjadwalan frame; dibangunkan lagi oleh pointermove
+      cancelAnimationFrame(raf);
+      sleeping = true;
     }
   };
   raf = requestAnimationFrame(frame);
@@ -479,7 +490,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     } else if (!running) {
       running = true;
       last = performance.now();
-      raf = requestAnimationFrame(frame);
+      if (!sleeping) raf = requestAnimationFrame(frame);
     }
   };
   document.addEventListener("visibilitychange", onVisibility);

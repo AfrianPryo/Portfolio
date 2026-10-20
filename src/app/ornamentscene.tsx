@@ -42,24 +42,11 @@ const ENTRANCE: Record<
 
 gsap.registerPlugin(ScrollTrigger);
 
-const STAGGER_SPAN = 0.75; // tiap potongan memakai 75% rentang scroll untuk staggered effect
 const SEP_SCALE_MAX = 0.85; // skala maksimum saat terpisah
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const easeInOutCubic = (t: number) =>
   t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-const smoothstep = (t: number) => t * t * (3 - 2 * t);
-
-type SeparationTarget = {
-  x: number;
-  z: number;
-  lift: number;
-  rotX: number;
-  rotY: number;
-  rotZ: number;
-  scale: number;
-  delay: number;
-};
 
 type Part = {
   key: PieceKey;
@@ -80,7 +67,9 @@ export default function OrnamentScene({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onUnsupportedRef = useRef(onUnsupported);
-  onUnsupportedRef.current = onUnsupported;
+  useEffect(() => {
+    onUnsupportedRef.current = onUnsupported;
+  });
 
   useEffect(() => {
     const container = containerRef.current;
@@ -96,10 +85,14 @@ export default function OrnamentScene({
         testCanvas.getContext("webgl") ||
         testCanvas.getContext("experimental-webgl");
       if (!gl) {
+        console.warn("[OrnamentScene] WebGL tidak tersedia, memakai fallback 2D.");
         onUnsupportedRef.current();
         return;
       }
-    } catch {
+      // Lepas konteks tes agar tidak menumpuk dan membuat konteks utama dibuang browser
+      (gl as WebGLRenderingContext).getExtension("WEBGL_lose_context")?.loseContext();
+    } catch (err) {
+      console.warn("[OrnamentScene] Pengecekan WebGL gagal, memakai fallback 2D.", err);
       onUnsupportedRef.current();
       return;
     }
@@ -111,7 +104,8 @@ export default function OrnamentScene({
         antialias: true,
         powerPreference: "high-performance",
       });
-    } catch {
+    } catch (err) {
+      console.warn("[OrnamentScene] WebGLRenderer gagal dibuat, memakai fallback 2D.", err);
       onUnsupportedRef.current();
       return;
     }
@@ -121,13 +115,30 @@ export default function OrnamentScene({
     canvas.className = "pointer-events-none fixed inset-0 z-30 h-full w-full";
     container.appendChild(canvas);
 
+    // Jika context hilang dan tidak pulih dalam jeda ini, pakai fallback 2D.
+    const CONTEXT_RESTORE_TIMEOUT_MS = 3000;
+    let restoreTimer: ReturnType<typeof setTimeout> | undefined;
+
     const onContextLost = (e: Event) => {
-      e.preventDefault(); // Wajib untuk mencegah browser memblokir WebGL context di domain ini
+      e.preventDefault(); // Wajib supaya browser boleh memulihkan context (webglcontextrestored)
+      clearTimeout(restoreTimer);
+      restoreTimer = setTimeout(() => {
+        if (!disposed) {
+          console.warn("[OrnamentScene] WebGL context hilang dan tidak pulih, memakai fallback 2D.");
+          onUnsupportedRef.current();
+        }
+      }, CONTEXT_RESTORE_TIMEOUT_MS);
+    };
+    const onContextRestored = () => {
+      clearTimeout(restoreTimer);
+      layout(); // three.js memulihkan state sendiri; cukup sinkronkan ulang ukuran/kamera
     };
     canvas.addEventListener("webglcontextlost", onContextLost, false);
+    canvas.addEventListener("webglcontextrestored", onContextRestored, false);
 
     let disposed = false;
     const cleanups: Array<() => void> = [];
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     renderer.setClearColor(0x000000, 0);
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -182,15 +193,7 @@ export default function OrnamentScene({
     let centerShiftX = 0;
     let sepScale = SEP_SCALE_MAX;
     let currentPpu = 1;
-    let sepST: ScrollTrigger | null = null;
     let scrollActive = false;
-
-    // Target posisi terpisah dinamis, dihitung proporsional terhadap ukuran layar
-    let separationTargets: Record<PieceKey, SeparationTarget> = {
-      A: { x: -0.45, z: 0.04, lift: 0.08, rotX: 0.22, rotY: -0.65, rotZ: 0.16, scale: 0.95, delay: 0 },
-      F: { x: 0, z: -0.12, lift: 0.16, rotX: 0.35, rotY: 0.12, rotZ: 0, scale: 0.88, delay: 0.08 },
-      R: { x: 0.45, z: 0.06, lift: 0.08, rotX: -0.18, rotY: 0.65, rotZ: -0.18, scale: 0.95, delay: 0.16 },
-    };
 
     const layout = () => {
       const host = canvas.getBoundingClientRect();
@@ -229,13 +232,11 @@ export default function OrnamentScene({
 
       if (aboutAnchor && aboutEl) {
         const abRect = aboutAnchor.getBoundingClientRect();
-        // Cari container sticky dari About anchor (div sticky top-0 h-screen)
-        const stickyParent = (aboutAnchor.closest(".sticky") as HTMLElement) || aboutEl;
-        const stickyRect = stickyParent.getBoundingClientRect();
+        const aboutRect = aboutEl.getBoundingClientRect();
 
-        // Posisi target About anchor di viewport saat sticky section About aktif (top = 0)
-        const targetYInViewport = abRect.top - stickyRect.top + abRect.height / 2;
-        const targetXInViewport = abRect.left - stickyRect.left + abRect.width / 2;
+        // Posisi target About anchor di viewport saat section About tiba di top viewport
+        const targetYInViewport = abRect.top - aboutRect.top + abRect.height / 2;
+        const targetXInViewport = abRect.left - aboutRect.left + abRect.width / 2;
 
         shiftZ = (targetYInViewport - heroCY) / ppu;
         shiftX = (targetXInViewport - heroCX) / ppu;
@@ -252,6 +253,7 @@ export default function OrnamentScene({
     };
 
     let visible = true;
+    let aboutCache: Element | null = null;
     let lastY = typeof window !== "undefined" ? window.scrollY : 0;
     let smoothP = 0;
     let smoothTiltX = 0;
@@ -260,23 +262,38 @@ export default function OrnamentScene({
       const dt = Math.min(Math.max(deltaMs, 1), 50) / 1000;
       const y = window.scrollY;
 
-      // Target progress dari scroll perpindahan Hero -> About
-      let targetP = 0;
-      if (sepST && sepST.end > sepST.start) {
-        targetP = clamp01((y - sepST.start) / (sepST.end - sepST.start));
+      // Target progress dibaca langsung dari posisi About (0 saat About di bawah viewport, 1 saat di top)
+      // Elemen di-cache dan rect dibaca sekali per frame (sebelumnya querySelector + 2x getBoundingClientRect).
+      if (!aboutCache || !aboutCache.isConnected) {
+        aboutCache = document.querySelector("#tentang");
+      }
+      const aboutEl = aboutCache;
+      const aboutRect = aboutEl ? aboutEl.getBoundingClientRect() : null;
+      const abTop = aboutRect ? aboutRect.top : 0;
+      const targetP = clamp01(1 - abTop / (window.innerHeight || 1));
+
+      // About sudah lewat jauh: ornamen tidak dirender, jadi lewati seluruh kalkulasi scene.
+      // State dibuat sama dengan hasil konvergensi versi sebelumnya (smoothP -> target, tilt -> 0),
+      // dan semua posisi dihitung ulang penuh pada frame pertama saat About terlihat lagi.
+      if (aboutRect && aboutRect.bottom <= -100) {
+        smoothP = targetP;
+        smoothTiltX = 0;
+        lastY = y;
+        visible = false;
+        return;
       }
 
       // Exponential damping untuk kelembaman elastis yang ultra-halus (anti-snap)
-      smoothP += (targetP - smoothP) * (1 - Math.exp(-dt * 6.5));
+      smoothP = reduce
+        ? targetP
+        : smoothP + (targetP - smoothP) * (1 - Math.exp(-dt * 6.5));
 
       // Animasi transisi perpindahan ornamen 3D ke posisi About secara continuous (tanpa jeda terhenti)
       if (scrollActive && parts.length) {
         const landingProgress = smoothP;
         const eLanding = easeInOutCubic(landingProgress);
-        const arc = Math.sin(Math.PI * landingProgress) * (1 - eLanding); // lift halus hanya saat meluncur turun
+        const arc = reduce ? 0 : Math.sin(Math.PI * landingProgress) * (1 - eLanding); // lift halus hanya saat meluncur turun
 
-        const aboutEl = document.querySelector("#tentang");
-        const abTop = aboutEl ? aboutEl.getBoundingClientRect().top : 0;
         const scrollAwayZ = Math.min(0, abTop) / (currentPpu || 1);
 
         // Posisi ornamen: meluncur turun mulus ke About anchor dan bergerak bersama About saat scroll naik
@@ -287,13 +304,13 @@ export default function OrnamentScene({
 
         const time = performance.now() * 0.001;
         // Ornamen melayang tenang (subtle floating breathing)
-        const fY = Math.sin(time * 1.5) * 0.016;
-        const fRotX = Math.cos(time * 1.2) * 0.022;
-        const fRotZ = Math.sin(time * 1.4) * 0.025;
+        const fY = reduce ? 0 : Math.sin(time * 1.5) * 0.016;
+        const fRotX = reduce ? 0 : Math.cos(time * 1.2) * 0.022;
+        const fRotZ = reduce ? 0 : Math.sin(time * 1.4) * 0.025;
 
         // Rotasi fluida saat berpindah turun (meredup halus ke 0 saat sudah sampai di About)
-        const glideRotX = Math.sin(Math.PI * landingProgress) * (1 - eLanding) * 0.28;
-        const glideRotY = Math.sin(Math.PI * landingProgress) * (1 - eLanding) * 0.18;
+        const glideRotX = reduce ? 0 : Math.sin(Math.PI * landingProgress) * (1 - eLanding) * 0.28;
+        const glideRotY = reduce ? 0 : Math.sin(Math.PI * landingProgress) * (1 - eLanding) * 0.18;
 
         parts.forEach((part) => {
           part.sep.position.set(part.home.x, fY, part.home.z);
@@ -303,12 +320,16 @@ export default function OrnamentScene({
 
         // Dynamic velocity tilt yang halus mengikuti scroll
         const v = (y - lastY) / dt;
-        const targetTiltX = THREE.MathUtils.clamp(v / 3500, -1, 1) * 0.12;
+        const targetTiltX = reduce ? 0 : THREE.MathUtils.clamp(v / 3500, -1, 1) * 0.12;
         smoothTiltX += (targetTiltX - smoothTiltX) * (1 - Math.exp(-dt * 5));
         scrollRoot.rotation.x = glideRotX + smoothTiltX;
         scrollRoot.rotation.y = glideRotY;
       }
       lastY = y;
+
+      // Canvas berposisi fixed sehingga selalu "terlihat"; visibilitas ornamen ditentukan dari
+      // posisi About: ornamen bergerak bersama About, jadi tak terlihat lagi setelah About lewat.
+      visible = !aboutRect || aboutRect.bottom > -100;
 
       if (visible) renderer.render(scene, camera);
     };
@@ -358,29 +379,14 @@ export default function OrnamentScene({
 
       layout();
 
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      scrollActive = !reduce;
+      // Perpindahan Hero -> About mengikuti scroll 1:1, jadi tetap aktif walau reduced-motion.
+      // Pada reduced-motion, efek dekoratif (melayang, miring, meliuk) dimatikan di tick().
+      scrollActive = true;
 
-      // ===== Scroll: ornamen berpindah turun ke anchor About saat scroll =====
-      const aboutEl = document.querySelector("#tentang");
-      if (aboutEl) {
-        sepST = ScrollTrigger.create({
-          trigger: aboutEl,
-          start: "top bottom", // Mulai meluncur saat About mulai muncul dari bawah viewport
-          end: "top top",      // Selesai mendarat mulus tepat saat About tiba di atas viewport (tanpa jeda pause)
-          invalidateOnRefresh: true,
-        });
-        cleanups.push(() => {
-          sepST?.kill();
-          sepST = null;
-        });
-
-        // Sinkronkan progress scroll seketika jika halaman dimuat pada posisi Y tertentu (cegah lonjakan)
-        ScrollTrigger.refresh();
-        const initY = window.scrollY || 0;
-        if (sepST.end > sepST.start) {
-          smoothP = clamp01((initY - sepST.start) / (sepST.end - sepST.start));
-        }
+      // Sinkronkan progres awal jika halaman dimuat pada posisi scroll tertentu (cegah lonjakan)
+      const aboutNode = document.querySelector("#tentang");
+      if (aboutNode) {
+        smoothP = clamp01(1 - aboutNode.getBoundingClientRect().top / (window.innerHeight || 1));
       }
 
       // Animasi pernapasan halus saat potongan sudah menyatu
@@ -522,8 +528,11 @@ export default function OrnamentScene({
       });
     };
 
-    init().catch(() => {
-      if (!disposed) onUnsupportedRef.current();
+    init().catch((err) => {
+      if (!disposed) {
+        console.error("[OrnamentScene] Gagal inisialisasi scene 3D, memakai fallback 2D:", err);
+        onUnsupportedRef.current();
+      }
     });
 
     gsap.ticker.add(tick);
@@ -532,15 +541,19 @@ export default function OrnamentScene({
     const ro = new ResizeObserver(layout);
     ro.observe(canvas);
     ro.observe(anchor);
+    // Anchor tujuan di About juga diamati: posisinya bisa bergeser (mis. setelah font termuat)
+    const aboutAnchorEl = document.querySelector("#about-ornament-anchor");
+    if (aboutAnchorEl) ro.observe(aboutAnchorEl);
+    document.fonts?.ready.then(() => {
+      if (!disposed) layout();
+    });
     cleanups.push(() => ro.disconnect());
 
-    const io = new IntersectionObserver(([entry]) => {
-      visible = entry.isIntersecting;
+    cleanups.push(() => {
+      clearTimeout(restoreTimer);
+      canvas.removeEventListener("webglcontextlost", onContextLost);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored);
     });
-    io.observe(canvas);
-    cleanups.push(() => io.disconnect());
-
-    cleanups.push(() => canvas.removeEventListener("webglcontextlost", onContextLost));
 
     return () => {
       disposed = true;
@@ -552,6 +565,7 @@ export default function OrnamentScene({
       material.dispose();
       try {
         renderer.dispose();
+        renderer.forceContextLoss();
       } catch {}
       if (canvas.parentNode) {
         canvas.parentNode.removeChild(canvas);

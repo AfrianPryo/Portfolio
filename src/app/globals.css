@@ -21,6 +21,15 @@
   font-family: 'AcerokMages', serif !important;
 }
 
+@keyframes contact-fire-spin {
+  to { transform: rotate(360deg); }
+}
+
+.contact-fire-spin {
+  transform-origin: 120px 120px;
+  animation: contact-fire-spin 28s linear infinite;
+}
+
 html,
 body {
   background: #000;
@@ -92,6 +101,10 @@ body::-webkit-scrollbar,
 
 @media (prefers-reduced-motion: reduce) {
   .noise-overlay {
+    animation: none;
+  }
+
+  .contact-fire-spin {
     animation: none;
   }
 }

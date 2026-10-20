@@ -6,7 +6,7 @@ import ScrambleText from "./ScrambleText";
  * Memakai data-nav + data-reveal supaya ikut intro GSAP navbar dari Hero.tsx.
  */
 export default function CtaButton({
-  href = "#kontak",
+  href = "#contact",
   label = "Wujudkan idemu",
 }: {
   href?: string;

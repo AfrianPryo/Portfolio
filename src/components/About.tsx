@@ -137,7 +137,7 @@ export default function About() {
     <section
       ref={root}
       id="tentang"
-      className="sticky top-0 z-10 w-full h-screen min-h-[600px] bg-black overflow-hidden px-[4vw] py-[clamp(24px,4vw,60px)] flex flex-col justify-between will-change-transform"
+      className="relative z-10 w-full h-screen min-h-[600px] bg-black overflow-hidden px-[4vw] py-[clamp(24px,4vw,60px)] flex flex-col justify-between"
     >
         {/* 
           Background Siluet Tribal Watermark (Sesuai Referensi Desain):

@@ -1,341 +1,903 @@
 "use client";
 
-import { useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-// 10 kotak putih kosong sesuai sketsa referensi
-const CARDS = Array.from({ length: 10 }, (_, i) => ({ id: `card-${i + 1}` }));
+type ProjectCategory = "website" | "design" | "art";
+
+const CATEGORIES: { id: ProjectCategory; label: string }[] = [
+  { id: "website", label: "WEBSITE" },
+  { id: "design", label: "DESIGN" },
+  { id: "art", label: "ART" },
+];
+
+// Wall (greek-wall.webp) sudah dipotong rapat: 2735x1346, pilar menyentuh tepi
+// atas & bawah. Stage selalu setinggi viewport (atas/bawah tidak pernah
+// terpotong); bagian samping boleh terpotong di layar sempit. Semua elemen
+// dekor (frame, kartu, menu) diposisikan dalam persen dari stage ini.
+const WALL_RATIO = 2735 / 1046;
+// Stretch horizontal: lebar wall = tinggi layar x WALL_RATIO x WALL_STRETCH_X.
+// 1 = proporsi asli, >1 = pilar lebih lebar (sisi kiri-kanan makin terpotong).
+const WALL_STRETCH_X = 1.25;
+// Stretch vertikal: tinggi wall (dan stage sticky) = tinggi layar x
+// WALL_STRETCH_Y. 1 = pas setinggi layar, >1 = wall lebih tinggi dan TIDAK
+// dipotong; section ditambah panjang yang sama supaya durasi pin/scroll
+// proyek tetap sama, dan sisa wall terlihat saat section di-scroll masuk/keluar.
+const WALL_STRETCH_Y = 1.35;
+const WALL_EXTRA_Y = Math.max(WALL_STRETCH_Y, 1) - 1;
+// Pin scroll (pergantian preview proyek) tidak mulai saat atas section
+// menyentuh atas layar, tapi setelah section di-scroll biasa sebesar
+// PIN_OFFSET_Y x tinggi layar (stage menempel dengan atasnya di
+// -PIN_OFFSET_Y x tinggi layar). Dibatasi WALL_EXTRA_Y supaya bawah stage
+// tidak pernah terlihat kosong saat pin aktif.
+const PIN_OFFSET_Y = Math.min(0.21, WALL_EXTRA_Y);
+// Posisi vertikal dari desain (persen tinggi layar saat pin aktif) diubah ke
+// persen layer stage, yang sudah naik sebesar PIN_OFFSET_Y.
+const pinTop = (viewportPercent: number) =>
+  `${viewportPercent + PIN_OFFSET_Y * 100}%`;
+// Lingkaran progres (viewBox 100): keliling dipakai untuk stroke-dashoffset.
+const RING_R = 48;
+const RING_C = 2 * Math.PI * RING_R;
+// Skala awal lingkaran kursor (lebih kecil); membesar ke 1 saat hover preview.
+const CURSOR_BASE_SCALE = 0.55;
+// Garis atas title & deskripsi (persen tinggi layar saat pin aktif). Keduanya
+// memakai nilai yang sama dan menempel dari ATAS (tidak di-center), jadi baris
+// pertama selalu sejajar di sumbu x berapa pun jumlah barisnya.
+const TEXT_TOP = 46.7;
+// Warna teks title/deskripsi + bintang (merah marun gelap sesuai desain).
+const INK = "#3b0c10";
+
+// Bintang 4 sudut dari /icon-custom/Plus.svg. SVG-nya berwarna putih, jadi
+// dipakai sebagai mask supaya warnanya mengikuti INK. Posisinya (left/top
+// dalam px, titik tengah bintang) diisi lewat pengukuran di useGSAP supaya
+// selalu menempel di awal baris pertama / akhir baris terakhir teks, berapa
+// pun jumlah baris dan panjang katanya.
+const STAR_MASK = "url(/icon-custom/Plus.svg)";
+
+function Star() {
+  return (
+    <span
+      aria-hidden="true"
+      className={`works-star pointer-events-none absolute left-0 top-0 block aspect-square w-[clamp(7px,0.95vw,17px)] -translate-x-1/2 -translate-y-1/2`}
+      style={{
+        backgroundColor: INK,
+        WebkitMaskImage: STAR_MASK,
+        maskImage: STAR_MASK,
+        WebkitMaskRepeat: "no-repeat",
+        maskRepeat: "no-repeat",
+        WebkitMaskPosition: "center",
+        maskPosition: "center",
+        WebkitMaskSize: "contain",
+        maskSize: "contain",
+      }}
+    />
+  );
+}
+
+const PROJECTS: {
+  title: string;
+  description: string;
+  category: ProjectCategory;
+  image: string;
+}[] = [
+  {
+    title: "AGILISM ABCDE",
+    description: "Proyek website pilihan.",
+    category: "website",
+    image: "/projects/project-1.svg",
+  },
+  {
+    title: "SOLARIS",
+    description: "Neo-brutalist commerce.",
+    category: "website",
+    image: "/projects/project-5.svg",
+  },
+  {
+    title: "CHRONO ARCHIVE",
+    description: "Kinetic typography experiment.",
+    category: "design",
+    image: "/projects/project-2.svg",
+  },
+  {
+    title: "LUMEN ANALYTICS",
+    description: "Real-time GPU trading visualizer.",
+    category: "design",
+    image: "/projects/project-3.svg",
+  },
+  {
+    title: "AURA SOUND LAB",
+    description: "Generative frequency synthesis.",
+    category: "art",
+    image: "/projects/project-4.svg",
+  },
+];
 
 export default function Works() {
   const sectionRef = useRef<HTMLElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
-  const cardsRef = useRef<(HTMLDivElement | null)[]>([]);
-  const pathRefs = useRef<(SVGPathElement | null)[]>([]);
-  const clipRefs = useRef<(SVGPathElement | null)[]>([]);
+  const previewRef = useRef<HTMLDivElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
   const cursorIconRef = useRef<HTMLImageElement>(null);
-  const spinTweenRef = useRef<gsap.core.Tween | null>(null);
-  const isDragging = useRef(false);
-  const startX = useRef(0);
+  const viewTextRef = useRef<HTMLImageElement>(null);
+  const ringRef = useRef<SVGCircleElement>(null);
+  const activeProjectIndexRef = useRef(0);
+  const pointerRef = useRef({ x: 0, y: 0, inside: false });
+  const [activeCategory, setActiveCategory] =
+    useState<ProjectCategory>("website");
+  const [activeProjectIndex, setActiveProjectIndex] = useState(0);
+  const [layoutKey, setLayoutKey] = useState(0);
+  const filteredProjects = PROJECTS.filter(
+    (project) => project.category === activeCategory
+  );
+
+  // Baris deskripsi dihitung dari layout, jadi hitung ulang (lewat layoutKey)
+  // setelah font siap dan saat lebar layar berubah.
+  useEffect(() => {
+    let timer: number | undefined;
+    let lastWidth = window.innerWidth;
+    const bump = () => setLayoutKey((key) => key + 1);
+    const onResize = () => {
+      if (window.innerWidth === lastWidth) return;
+      lastWidth = window.innerWidth;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(bump, 250);
+    };
+
+    document.fonts?.ready.then(bump);
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
 
   useGSAP(
     () => {
       const section = sectionRef.current;
-      const track = trackRef.current;
-      if (!section || !track) return;
+      const preview = previewRef.current;
+      const cursor = cursorRef.current;
+      const cursorIcon = cursorIconRef.current;
+      const viewText = viewTextRef.current;
 
-      const mm = gsap.matchMedia();
+      if (!section || !preview || !cursor || !cursorIcon || !viewText) return;
 
-      mm.add("(prefers-reduced-motion: reduce)", () => {
-        gsap.set(track, { x: 0 });
+      const projectImages = gsap.utils.toArray<HTMLElement>(
+        ".works-project-image",
+        section
+      );
+      const projectTitles = gsap.utils.toArray<HTMLElement>(
+        ".works-project-title",
+        section
+      );
+      const projectDescriptions = gsap.utils.toArray<HTMLElement>(
+        ".works-project-description",
+        section
+      );
+      const projectCaptions = [...projectTitles, ...projectDescriptions];
+      const lastProjectIndex = filteredProjects.length - 1;
+
+      // Lingkaran progres PER HALAMAN: tiap proyek mengisi cincin dari kosong
+      // ke penuh selama rentang scroll miliknya sendiri, lalu kosong lagi di
+      // halaman berikutnya (kategori 1 proyek = penuh). Batas halaman sama
+      // dengan pergantian angka/title (Math.round).
+      const ring = ringRef.current;
+      const setRing = (progress: number) => {
+        if (!ring) return;
+        let fraction = 1;
+
+        if (lastProjectIndex > 0) {
+          const position = progress * lastProjectIndex;
+          const page = Math.max(
+            0,
+            Math.min(lastProjectIndex, Math.round(position))
+          );
+          const from = page === 0 ? 0 : page - 0.5;
+          const to = page === lastProjectIndex ? lastProjectIndex : page + 0.5;
+
+          fraction = Math.max(0, Math.min(1, (position - from) / (to - from)));
+        }
+
+        ring.style.strokeDashoffset = `${RING_C * (1 - fraction)}`;
+      };
+      setRing(0);
+
+      // Animasi teks. Title: tiap karakter muncul membesar + opacity naik.
+      // Deskripsi: tiap baris muncul dari kanan bawah. Baris dideteksi dari
+      // posisi vertikal kata (offsetTop) karena pembungkusan teks dinamis.
+      const titleChars = projectTitles.map((title) =>
+        gsap.utils.toArray<HTMLElement>(".works-title-char", title)
+      );
+      const descLines = projectDescriptions.map((description) => {
+        const lines: HTMLElement[][] = [];
+        let lineTop = Number.NEGATIVE_INFINITY;
+
+        gsap.utils
+          .toArray<HTMLElement>(".works-desc-word", description)
+          .forEach((word) => {
+            if (Math.abs(word.offsetTop - lineTop) > 4) {
+              lines.push([]);
+              lineTop = word.offsetTop;
+            }
+            lines[lines.length - 1].push(word);
+          });
+
+        return lines;
+      });
+      const allTitleChars = titleChars.flat();
+      const allDescWords = descLines.flat(2);
+
+      // Penempatan bintang (px, relatif ke blok teks masing-masing), satu
+      // bintang per teks di baris pertama.
+      // Title (rata kiri): di awal baris pertama (kiri-atas).
+      // Deskripsi (rata kanan): di ujung baris pertama (kanan-atas).
+      // Offset dalam em supaya ikut skala font (clamp) di semua ukuran layar.
+      const placeStar = (host: HTMLElement, x: number, y: number) => {
+        const star = host.querySelector<HTMLElement>(".works-star");
+
+        if (!star) return;
+        star.style.left = `${x}px`;
+        star.style.top = `${y}px`;
+      };
+
+      projectTitles.forEach((title, index) => {
+        const chars = titleChars[index];
+
+        if (!chars?.length) return;
+
+        const first = chars[0];
+        const fs = parseFloat(getComputedStyle(title).fontSize);
+
+        placeStar(
+          title,
+          first.offsetLeft - 0.37 * fs,
+          first.offsetTop - 0.16 * fs
+        );
       });
 
-      mm.add("(prefers-reduced-motion: no-preference)", () => {
-        // =========================================================================
-        // 1. TRANSISI PARALLAX OVERLAP ANTARA ABOUT DAN WORKS:
-        // - 35% pertama: About diam di posisinya (sticky), Works naik menutupi 35% (sepertiga)
-        //   bagian bawah About dengan efek parallax layer dan bayangan z-axis.
-        // - 65% selebihnya: About bergerak naik bersamaan (-window.innerHeight * 0.65)
-        //   sehingga keduanya lanjut scroll ke atas seperti biasa secara sinkron & mulus.
-        // =========================================================================
-        const aboutEl = document.querySelector<HTMLElement>("#tentang");
-        if (aboutEl) {
-          const overlapTl = gsap.timeline({
+      projectDescriptions.forEach((description, index) => {
+        const lines = descLines[index];
+
+        if (!lines?.length) return;
+
+        const firstLine = lines[0];
+        const endOfFirst = firstLine[firstLine.length - 1];
+        const fs = parseFloat(getComputedStyle(description).fontSize);
+
+        placeStar(
+          description,
+          endOfFirst.offsetLeft + endOfFirst.offsetWidth + 0.3 * fs,
+          firstLine[0].offsetTop - 0.25 * fs
+        );
+      });
+
+      const addTitleIn = (
+        tl: gsap.core.Timeline,
+        index: number,
+        at: number,
+        duration: number,
+        total: number
+      ) => {
+        if (!titleChars[index]?.length) return;
+        tl.fromTo(
+          titleChars[index],
+          { autoAlpha: 0, scale: 0.55 },
+          {
+            autoAlpha: 1,
+            scale: 1,
+            duration,
+            ease: "power2.out",
+            stagger: { amount: total },
+            immediateRender: false,
+          },
+          at
+        );
+      };
+      const addDescIn = (
+        tl: gsap.core.Timeline,
+        index: number,
+        at: number,
+        duration: number,
+        gap: number
+      ) => {
+        descLines[index]?.forEach((words, lineIndex) => {
+          tl.fromTo(
+            words,
+            { autoAlpha: 0, x: 28, y: 22 },
+            {
+              autoAlpha: 1,
+              x: 0,
+              y: 0,
+              duration,
+              ease: "power2.out",
+              immediateRender: false,
+            },
+            at + lineIndex * gap
+          );
+        });
+      };
+
+      // Image stretch: gambar aktif memenuhi kartu (scaleY 1), sisanya
+      // "terlipat" ke bawah kartu (scaleY 0, origin bawah) menunggu giliran.
+      gsap.set(projectCaptions, { autoAlpha: 0 });
+      gsap.set([projectTitles[0], projectDescriptions[0]], { autoAlpha: 1 });
+      gsap.set(projectImages, {
+        scaleY: (i) => (i === 0 ? 1 : 0),
+        transformOrigin: "50% 100%",
+      });
+
+      const updateActiveProject = (index: number) => {
+        const nextIndex = Math.max(0, Math.min(lastProjectIndex, index));
+
+        if (activeProjectIndexRef.current !== nextIndex) {
+          activeProjectIndexRef.current = nextIndex;
+          setActiveProjectIndex(nextIndex);
+        }
+      };
+
+      const showProjectImmediately = (index: number) => {
+        updateActiveProject(index);
+        gsap.set(projectImages, {
+          scaleY: (i) => (i === index ? 1 : 0),
+          transformOrigin: "50% 100%",
+        });
+        gsap.set(projectCaptions, { autoAlpha: 0, y: 0 });
+        gsap.set(
+          [projectTitles[index], projectDescriptions[index]],
+          { autoAlpha: 1 }
+        );
+      };
+
+      // Keadaan awal animasi teks + intro proyek pertama (diputar sekali saat
+      // section mulai masuk layar). Mode reduced-motion: teks langsung tampil.
+      const textMedia = gsap.matchMedia();
+
+      textMedia.add("(prefers-reduced-motion: no-preference)", () => {
+        gsap.set(allTitleChars, {
+          autoAlpha: 0,
+          scale: 0.55,
+          transformOrigin: "50% 80%",
+        });
+        gsap.set(allDescWords, { autoAlpha: 0, x: 28, y: 22 });
+
+        const intro = gsap.timeline({ paused: true });
+        addTitleIn(intro, 0, 0, 0.7, 0.55);
+        addDescIn(intro, 0, 0.3, 0.8, 0.14);
+
+        if (section.getBoundingClientRect().top < window.innerHeight * 0.2) {
+          intro.play();
+        } else {
+          ScrollTrigger.create({
+            trigger: section,
+            start: "top 20%",
+            once: true,
+            onEnter: () => intro.play(),
+          });
+        }
+      });
+
+      const projectMedia = gsap.matchMedia();
+
+      if (lastProjectIndex > 0) {
+        const scrollTriggerOptions = {
+          trigger: section,
+          start: () =>
+            `top+=${Math.round(PIN_OFFSET_Y * window.innerHeight)} top`,
+          end: () =>
+            `+=${lastProjectIndex * Math.max(window.innerHeight, 600)}`,
+          invalidateOnRefresh: true,
+        };
+
+        projectMedia.add("(prefers-reduced-motion: no-preference)", () => {
+          const timeline = gsap.timeline({
             scrollTrigger: {
-              trigger: section,
-              start: "top bottom",
-              end: "top top",
-              scrub: true,
-              invalidateOnRefresh: true,
+              ...scrollTriggerOptions,
+              scrub: 0.8,
+              onUpdate: (self) => {
+                setRing(self.progress);
+                updateActiveProject(
+                  Math.round(self.progress * lastProjectIndex)
+                );
+              },
             },
           });
 
-          overlapTl
-            .to(aboutEl, { y: 0, duration: 0.35, ease: "none" })
-            .to(aboutEl, {
-              y: () => -window.innerHeight * 0.65,
-              filter: "brightness(0.4)",
-              duration: 0.65,
-              ease: "none",
-            });
-        }
+          // Referensi "Image Stretch Transition":
+          // - gambar lama terjepit ke ATAS (scaleY 1 -> 0, origin atas)
+          // - gambar baru terentang dari BAWAH (scaleY 0 -> 1, origin bawah)
+          // Tinggi keduanya selalu berjumlah 100% sehingga batasnya naik
+          // mulus tanpa fade/clip. Gambar ikut tergepit (bukan di-crop).
+          const HOLD = 0.2; // jeda diam sebelum & sesudah transisi
+          const SPAN = 1 - HOLD * 2;
+          const EASE = "power3.inOut";
 
-        // =========================================================================
-        // 2. HORIZONTAL CAROUSEL PIN & SCRUB:
-        // Saat Works menutupi layar penuh, section mengunci (pin: true)
-        // dan pergerakan scroll menggeser carousel horizontal.
-        // =========================================================================
-        const getScrollDistance = () => {
-          return -(track.scrollWidth - window.innerWidth + window.innerWidth * 0.08);
-        };
+          for (let index = 1; index <= lastProjectIndex; index += 1) {
+            const start = index - 1 + HOLD;
 
-        const carouselTl = gsap.timeline({
-          scrollTrigger: {
-            trigger: section,
-            start: "top top",
-            end: () => `+=${Math.max(track.scrollWidth - window.innerWidth, window.innerHeight * 1.5)}`,
-            pin: true,
-            scrub: true,
-            invalidateOnRefresh: true,
-          },
-        });
+            timeline.fromTo(
+              projectImages[index - 1],
+              { scaleY: 1, transformOrigin: "50% 0%" },
+              {
+                scaleY: 0,
+                transformOrigin: "50% 0%",
+                duration: SPAN,
+                ease: EASE,
+                immediateRender: false,
+              },
+              start
+            );
+            timeline.fromTo(
+              projectImages[index],
+              { scaleY: 0, transformOrigin: "50% 100%" },
+              {
+                scaleY: 1,
+                transformOrigin: "50% 100%",
+                duration: SPAN,
+                ease: EASE,
+                immediateRender: false,
+              },
+              start
+            );
+            timeline.to(
+              [projectTitles[index - 1], projectDescriptions[index - 1]],
+              {
+                autoAlpha: 0,
+                y: -18,
+                duration: SPAN * 0.4,
+                ease: "none",
+              },
+              start + SPAN * 0.2
+            );
+            // Wadah title & deskripsi langsung tampil; yang beranimasi adalah
+            // karakter title (membesar + opacity) dan baris deskripsi.
+            const enterAt = start + SPAN * 0.45;
 
-        carouselTl.to(track, {
-          x: getScrollDistance,
-          ease: "none",
-        });
-
-        // =========================================================================
-        // 3. EFEK PINCUSHION DISTORTION DINAMIS (DITINGKATKAN):
-        // Kartu melengkung (bend) menyesuaikan kurva pincushion perspective dengan
-        // distorsi yang lebih tegas dan dramatis.
-        // =========================================================================
-        const updatePincushion = () => {
-          const cards = cardsRef.current;
-          const vw = window.innerWidth;
-          const cx = vw / 2;
-          const halfVw = vw / 2;
-
-          for (let i = 0; i < cards.length; i++) {
-            const card = cards[i];
-            if (!card) continue;
-            const rect = card.getBoundingClientRect();
-            // Abaikan kartu yang berada jauh di luar layar untuk efisiensi
-            if (rect.right < -vw * 0.5 || rect.left > vw * 1.5) continue;
-
-            const cardCX = rect.left + rect.width / 2;
-            const nx = (cardCX - cx) / halfVw;
-            const absX = Math.abs(nx);
-
-            // 1. Orientasi 3D halus & elegan
-            const rotY = -Math.sign(nx) * Math.pow(absX, 1.2) * 11;
-            const tz = (Math.pow(absX, 1.5) - 0.25) * 32;
-            const scale = 1 + Math.pow(absX, 2) * 0.04;
-
-            card.style.transform = `translate3d(0, 0px, ${tz}px) rotateY(${rotY}deg) scale(${scale})`;
-
-            // 2. Geometri kelengkungan kurva global (Persis sesuai garis hijau referensi):
-            // Garis kurva hijau adalah lengkungan global kontinu di seluruh layar:
-            // - Di tengah layar (center): sisi atas mencelup lembut ke bawah, sisi bawah melengkung lembut ke atas (pinggang ramping)
-            // - Ke arah tepi kiri dan kanan layar: kurva mengembang lembut ke atas (top) dan ke bawah (bottom)
-            // - Sisi kiri dan kanan kartu tetap tegak lurus (garis vertikal bersih, tanpa benjolan barel)
-            const nxL = (rect.left - cx) / halfVw;
-            const nxR = (rect.right - cx) / halfVw;
-            const nxM = nx;
-
-            // Fungsi kurva global hijau: flare kontinu halus
-            const getCurveHalfHeight = (u: number) => {
-              const uClamped = Math.min(1.35, Math.abs(u));
-              // Setengah tinggi nominal di tengah = 195 (tinggi total 390)
-              // Mengembang secara eksponensial lembut (1.7) hingga +110 di tepi layar (tinggi total 610)
-              return 195 + Math.pow(uClamped, 1.7) * 110;
-            };
-
-            const hL = getCurveHalfHeight(nxL);
-            const hR = getCurveHalfHeight(nxR);
-            const hM = getCurveHalfHeight(nxM);
-
-            const yT0 = 312.5 - hL;
-            const yT1 = 312.5 - hR;
-            const yTM = 312.5 - hM;
-            const yTc = 2 * yTM - 0.5 * (yT0 + yT1);
-
-            const yB0 = 312.5 + hL;
-            const yB1 = 312.5 + hR;
-            const yBM = 312.5 + hM;
-            const yBc = 2 * yBM - 0.5 * (yB0 + yB1);
-
-            // Sisi kiri & kanan adalah garis vertikal tegak lurus bersih (clean straight vertical edges)
-            const pathData = `M 0,${yT0.toFixed(1)} Q 500,${yTc.toFixed(1)} 1000,${yT1.toFixed(1)} L 1000,${yB1.toFixed(1)} Q 500,${yBc.toFixed(1)} 0,${yB0.toFixed(1)} Z`;
-
-            const pathEl = pathRefs.current[i];
-            if (pathEl) {
-              pathEl.setAttribute("d", pathData);
-            }
-            const clipEl = clipRefs.current[i];
-            if (clipEl) {
-              clipEl.setAttribute("d", pathData);
-            }
+            timeline.fromTo(
+              [projectTitles[index], projectDescriptions[index]],
+              { autoAlpha: 0 },
+              {
+                autoAlpha: 1,
+                duration: SPAN * 0.02,
+                ease: "none",
+                immediateRender: false,
+              },
+              enterAt
+            );
+            addTitleIn(timeline, index, enterAt, SPAN * 0.2, SPAN * 0.25);
+            addDescIn(
+              timeline,
+              index,
+              enterAt + SPAN * 0.08,
+              SPAN * 0.2,
+              SPAN * 0.07
+            );
           }
-        };
+          // padding agar progres scroll 0..1 = seluruh rangkaian proyek
+          timeline.set({}, {}, lastProjectIndex);
+        });
 
-        gsap.ticker.add(updatePincushion);
-        updatePincushion();
+        projectMedia.add("(prefers-reduced-motion: reduce)", () => {
+          const trigger = ScrollTrigger.create({
+            ...scrollTriggerOptions,
+            onUpdate: (self) => {
+              setRing(self.progress);
+              showProjectImmediately(
+                Math.round(self.progress * lastProjectIndex)
+              );
+            },
+          });
 
-        // =========================================================================
-        // 4. FOLLOWING CURSOR DENGAN ROTASI (KHUSUS SECTION WORKS)
-        // =========================================================================
-        const cursorEl = cursorRef.current;
-        const cursorIcon = cursorIconRef.current;
+          setRing(trigger.progress);
+          showProjectImmediately(
+            Math.round(trigger.progress * lastProjectIndex)
+          );
+        });
+      }
 
-        let cleanupCursor: (() => void) | undefined;
+      const cursorMedia = gsap.matchMedia();
 
-        if (cursorEl && cursorIcon) {
-          gsap.set(cursorEl, { xPercent: -50, yPercent: -50, opacity: 0, scale: 0.3 });
+      cursorMedia.add(
+        "(pointer: fine) and (prefers-reduced-motion: no-preference)",
+        () => {
+          const pointer = pointerRef.current;
 
-          const spinTween = gsap.to(cursorIcon, {
+          // Efek ini dibuat ulang setiap kategori diganti. Kalau kursor sudah
+          // berada di dalam section (mis. habis klik nav), pointerenter tidak
+          // terpicu lagi, jadi langsung tampilkan di posisi terakhirnya.
+          gsap.set(cursor, {
+            xPercent: -50,
+            yPercent: -50,
+            x: pointer.x,
+            y: pointer.y,
+            autoAlpha: pointer.inside ? 1 : 0,
+            scale: pointer.inside ? CURSOR_BASE_SCALE : 0.3,
+          });
+          gsap.set(viewText, { autoAlpha: 0, scale: 0.8 });
+
+          const spin = gsap.to(cursorIcon, {
             rotation: 360,
             duration: 8,
             repeat: -1,
             ease: "none",
           });
-          spinTweenRef.current = spinTween;
+          const xTo = gsap.quickTo(cursor, "x", {
+            duration: 0.28,
+            ease: "power3.out",
+          });
+          const yTo = gsap.quickTo(cursor, "y", {
+            duration: 0.28,
+            ease: "power3.out",
+          });
 
-          const xTo = gsap.quickTo(cursorEl, "x", { duration: 0.28, ease: "power3.out" });
-          const yTo = gsap.quickTo(cursorEl, "y", { duration: 0.28, ease: "power3.out" });
-
-          const handlePointerMoveCursor = (e: PointerEvent) => {
-            xTo(e.clientX);
-            yTo(e.clientY);
+          const moveCursor = (event: PointerEvent) => {
+            pointer.x = event.clientX;
+            pointer.y = event.clientY;
+            pointer.inside = true;
+            xTo(event.clientX);
+            yTo(event.clientY);
           };
-
-          const handlePointerEnterCursor = (e: PointerEvent) => {
-            xTo(e.clientX);
-            yTo(e.clientY);
-            gsap.to(cursorEl, {
-              opacity: 1,
-              scale: 1,
+          const showCursor = (event: PointerEvent) => {
+            moveCursor(event);
+            gsap.to(cursor, {
+              autoAlpha: 1,
+              scale: CURSOR_BASE_SCALE,
               duration: 0.3,
               ease: "back.out(1.7)",
             });
           };
-
-          const handlePointerLeaveCursor = () => {
-            gsap.to(cursorEl, {
-              opacity: 0,
+          const hideCursor = () => {
+            pointer.inside = false;
+            gsap.to(cursor, {
+              autoAlpha: 0,
               scale: 0.3,
               duration: 0.25,
               ease: "power2.in",
             });
           };
+          const showViewText = () => {
+            gsap.to(cursor, {
+              scale: 1,
+              duration: 0.35,
+              ease: "back.out(1.5)",
+              overwrite: "auto",
+            });
+            gsap.to(viewText, {
+              autoAlpha: 1,
+              scale: 1,
+              duration: 0.2,
+              ease: "power2.out",
+            });
+          };
+          const hideViewText = () => {
+            gsap.to(cursor, {
+              scale: CURSOR_BASE_SCALE,
+              duration: 0.25,
+              ease: "power2.out",
+              overwrite: "auto",
+            });
+            gsap.to(viewText, {
+              autoAlpha: 0,
+              scale: 0.8,
+              duration: 0.15,
+              ease: "power2.in",
+            });
+          };
 
-          section.addEventListener("pointermove", handlePointerMoveCursor);
-          section.addEventListener("pointerenter", handlePointerEnterCursor);
-          section.addEventListener("pointerleave", handlePointerLeaveCursor);
+          section.addEventListener("pointermove", moveCursor);
+          section.addEventListener("pointerenter", showCursor);
+          section.addEventListener("pointerleave", hideCursor);
+          preview.addEventListener("pointerenter", showViewText);
+          preview.addEventListener("pointerleave", hideViewText);
 
-          cleanupCursor = () => {
-            section.removeEventListener("pointermove", handlePointerMoveCursor);
-            section.removeEventListener("pointerenter", handlePointerEnterCursor);
-            section.removeEventListener("pointerleave", handlePointerLeaveCursor);
-            spinTween.kill();
+          return () => {
+            section.removeEventListener("pointermove", moveCursor);
+            section.removeEventListener("pointerenter", showCursor);
+            section.removeEventListener("pointerleave", hideCursor);
+            preview.removeEventListener("pointerenter", showViewText);
+            preview.removeEventListener("pointerleave", hideViewText);
+            spin.kill();
           };
         }
+      );
 
-        return () => {
-          gsap.ticker.remove(updatePincushion);
-          cleanupCursor?.();
-        };
-      });
+      return () => {
+        textMedia.revert();
+        projectMedia.revert();
+        cursorMedia.revert();
+      };
     },
-    { scope: sectionRef }
+    {
+      scope: sectionRef,
+      dependencies: [activeCategory, layoutKey],
+      revertOnUpdate: true,
+    }
   );
-
-  // Drag interaktif dengan pointer/mouse untuk menggeser carousel secara intuitif
-  const handlePointerDown = (e: React.PointerEvent) => {
-    isDragging.current = true;
-    startX.current = e.clientX;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-
-    if (cursorRef.current) {
-      gsap.to(cursorRef.current, { scale: 0.85, duration: 0.2 });
-    }
-    if (spinTweenRef.current) {
-      gsap.to(spinTweenRef.current, { timeScale: 2.4, duration: 0.2 });
-    }
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging.current) return;
-    const deltaX = e.clientX - startX.current;
-    startX.current = e.clientX;
-    window.scrollBy({ top: -deltaX * 1.5, behavior: "instant" });
-  };
-
-  const handlePointerUp = (e: React.PointerEvent) => {
-    isDragging.current = false;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
-
-    if (cursorRef.current) {
-      gsap.to(cursorRef.current, { scale: 1, duration: 0.25, ease: "back.out(1.5)" });
-    }
-    if (spinTweenRef.current) {
-      gsap.to(spinTweenRef.current, { timeScale: 1, duration: 0.5 });
-    }
-  };
 
   return (
     <section
       ref={sectionRef}
       id="works"
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-      className="relative z-40 h-screen w-full rounded-none bg-[#c81010] bg-[radial-gradient(ellipse_at_center,_#d61515_0%,_#b80a0a_70%,_#9e0606_100%)] shadow-[0_-16px_36px_rgba(0,0,0,0.28)] overflow-hidden flex items-center select-none cursor-none [perspective:1600px]"
+      aria-label="Karya"
+      className="relative isolate w-full [@media(pointer:fine)]:cursor-none"
+      style={{
+        height: `${
+          Math.max(filteredProjects.length * 100, 130) + WALL_EXTRA_Y * 100
+        }svh`,
+        minHeight: `${
+          Math.max(filteredProjects.length * 600, 780) + WALL_EXTRA_Y * 600
+        }px`,
+      }}
     >
-      {/* Track Carousel Horizontal dengan 3D Preserve */}
       <div
-        ref={trackRef}
-        className="flex items-center gap-[clamp(20px,2.5vw,42px)] pl-[clamp(24px,5vw,72px)] pr-[clamp(24px,8vw,120px)] will-change-transform [transform-style:preserve-3d]"
+        className="sticky flex w-full items-start justify-center overflow-hidden"
+        style={{
+          top: `calc(-100svh * ${PIN_OFFSET_Y})`,
+          height: `calc(100svh * ${1 + WALL_EXTRA_Y})`,
+        }}
       >
-        {CARDS.map((card, i) => (
-          <div
-            key={card.id}
-            ref={(el) => {
-              cardsRef.current[i] = el;
-            }}
-            className="shrink-0 w-[clamp(240px,26vw,420px)] aspect-[16/10] will-change-transform [transform-style:preserve-3d] [backface-visibility:hidden] relative"
-            aria-hidden="true"
-          >
-            {/* Kartu SVG dengan lengkungan pincushion distortion dinamis */}
-            <svg
-              viewBox="0 0 1000 625"
-              className="w-full h-full overflow-visible drop-shadow-[0_14px_36px_rgba(0,0,0,0.22)]"
-              preserveAspectRatio="none"
+        <div
+          aria-hidden="true"
+          className="absolute left-1/2 top-0 z-0 h-full -translate-x-1/2"
+          style={{ width: `calc(100svh * ${WALL_RATIO * WALL_STRETCH_X})` }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/greek-wall.webp"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            className="absolute inset-0 h-full w-full select-none"
+          />
+        </div>
+
+        {/*
+          Frame + kartu di tengah layar, ukurannya mengikuti tinggi layar:
+          frame 99% tinggi layar (kotak y 19.3%-118.3%, bagian merah yang
+          terlihat sekitar y 30.7%-103.3%, di bawah ornamen kunci dan di atas
+          menu kategori; posisi ini dibaca saat pin aktif, ketika stage sudah
+          naik sebesar PIN_OFFSET_Y), rasio 465:647. Lubang frame (persen dari kotak frame)
+          x 23.6%-74.8%, y 20.6%-79.1% -> kartu dibuat lebih besar sekitar 3-4%
+          agar tepinya tertutup tebal frame.
+        */}
+        <article
+          aria-label="Pratinjau proyek"
+          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-svh"
+        >
+          <div className="absolute left-1/2 top-[19.3%] aspect-[465/647] h-[99%] -translate-x-1/2">
+            <div
+              ref={previewRef}
+              aria-label="Area pratinjau karya"
+              className="pointer-events-auto absolute left-[19.6%] top-[17.1%] h-[64.5%] w-[59.2%] overflow-hidden bg-[#d5d5d5]"
             >
-              <defs>
-                <linearGradient id={`card-grad-${card.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#ffffff" />
-                  <stop offset="100%" stopColor="#f5f5f7" />
-                </linearGradient>
-                <clipPath id={`card-clip-${card.id}`}>
-                  <path
-                    ref={(el) => {
-                      clipRefs.current[i] = el;
-                    }}
-                    d="M 0,117.5 L 1000,117.5 L 1000,507.5 L 0,507.5 Z"
+              {filteredProjects.map((project, index) => (
+                <div
+                  key={project.title}
+                  aria-hidden={index !== activeProjectIndex}
+                  className="works-project-image absolute inset-0 will-change-transform"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={project.image}
+                    alt={`${project.title} project preview`}
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
+                    className="h-full w-full select-none object-cover"
                   />
-                </clipPath>
-              </defs>
-              <path
-                ref={(el) => {
-                  pathRefs.current[i] = el;
-                }}
-                d="M 0,117.5 L 1000,117.5 L 1000,507.5 L 0,507.5 Z"
-                fill={`url(#card-grad-${card.id})`}
+                </div>
+              ))}
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/frame-red.png"
+              alt=""
+              aria-hidden="true"
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+              className="pointer-events-none absolute inset-0 h-full w-full select-none"
+            />
+          </div>
+            <nav
+              aria-label="Kategori proyek"
+              className="pointer-events-auto absolute inset-x-0 top-[109.5%] flex -translate-y-1/2 items-center justify-center gap-[clamp(8px,1.6vw,24px)]"
+            >
+              {CATEGORIES.map((category) => {
+                const isActive = category.id === activeCategory;
+
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      activeProjectIndexRef.current = 0;
+                      setActiveProjectIndex(0);
+                      setActiveCategory(category.id);
+                      const section = sectionRef.current;
+
+                      if (section) {
+                        window.scrollTo({
+                          top:
+                            section.getBoundingClientRect().top +
+                            window.scrollY +
+                            PIN_OFFSET_Y * window.innerHeight,
+                          behavior: "smooth",
+                        });
+                      }
+                    }}
+                    className="group inline-flex items-center gap-1.5 font-acerok text-[clamp(10px,1.05vw,16px)] leading-none text-black/45 transition-colors duration-300 hover:text-black focus-visible:text-black focus-visible:outline-none"
+                  >
+                    <span
+                      className={
+                        isActive
+                          ? "text-black"
+                          : "transition-transform duration-300 group-hover:-translate-x-1"
+                      }
+                    >
+                      {category.label}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className={`transition-all duration-300 ease-out ${
+                        isActive
+                          ? "translate-x-0 opacity-100"
+                          : "translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
+                      }`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src="/icon-custom/Plus.svg"
+                        alt=""
+                        className="h-[clamp(11px,1.05vw,16px)] w-[clamp(11px,1.05vw,16px)] invert transition-transform duration-500 ease-out group-hover:rotate-180 group-focus-visible:rotate-180"
+                      />
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+        </article>
+
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-svh">
+          {/*
+            Title (kiri): rata kiri, tiap kata di barisnya sendiri, italic,
+            dengan bintang di pojok kiri-atas dan kanan-bawah blok teks.
+            Semua title menumpuk di sel grid yang sama.
+          */}
+          <div
+            aria-live="polite"
+            className="absolute left-[4.2vw] z-20 grid w-[16vw]"
+            style={{ top: pinTop(TEXT_TOP) }}
+          >
+            {filteredProjects.map((project, index) => (
+              <h2
+                key={project.title}
+                aria-hidden={index !== activeProjectIndex}
+                aria-label={project.title}
+                className="works-project-title relative col-start-1 row-start-1 w-min justify-self-start font-acerok text-[clamp(16px,1.95vw,38px)] font-normal italic uppercase leading-[1.1] tracking-[0.01em] text-left"
+                style={{ color: INK }}
+              >
+                <span aria-hidden="true" className="block">
+                  {project.title.split(" ").map((word, wordIndex, words) => (
+                    <Fragment key={wordIndex}>
+                      <span className="inline-block whitespace-nowrap">
+                        {word.split("").map((char, charIndex) => (
+                          <span
+                            key={charIndex}
+                            className="works-title-char inline-block will-change-transform"
+                          >
+                            {char}
+                          </span>
+                        ))}
+                      </span>
+                      {wordIndex < words.length - 1 ? " " : null}
+                    </Fragment>
+                  ))}
+                </span>
+                <Star />
+              </h2>
+            ))}
+          </div>
+
+          {/*
+            Deskripsi (kanan): rata kanan, italic, kolom sempit sehingga
+            terpecah jadi 3 baris pendek; bintang di pojok kanan-atas dan
+            kiri-bawah blok teks.
+          */}
+          <div
+            aria-live="polite"
+            className="absolute right-[2.9vw] z-20 grid w-[15.5vw]"
+            style={{ top: pinTop(TEXT_TOP) }}
+          >
+            {filteredProjects.map((project, index) => (
+              <p
+                key={project.title}
+                aria-hidden={index !== activeProjectIndex}
+                className="works-project-description relative col-start-1 row-start-1 justify-self-end font-switzer text-[clamp(11px,1.4vw,26px)] italic leading-[1.2] tracking-[-0.01em] text-right"
+                style={{ color: INK }}
+              >
+                <span className="block">
+                  {project.description
+                    .split(" ")
+                    .map((word, wordIndex, words) => (
+                      <Fragment key={wordIndex}>
+                        <span className="works-desc-word inline-block will-change-transform">
+                          {word}
+                        </span>
+                        {wordIndex < words.length - 1 ? " " : null}
+                      </Fragment>
+                    ))}
+                </span>
+                <Star />
+              </p>
+            ))}
+          </div>
+
+          <div
+            role="img"
+            aria-label={`Proyek ${activeProjectIndex + 1} dari ${filteredProjects.length}`}
+            className="absolute z-20 flex aspect-square w-[clamp(56px,5.4vw,104px)] -translate-x-1/2 -translate-y-1/2 items-center justify-center text-black"
+            style={{ left: "91.5%", top: pinTop(75.5) }}
+          >
+            <svg
+              viewBox="0 0 100 100"
+              aria-hidden="true"
+              className="absolute inset-0 h-full w-full -rotate-90"
+            >
+              <circle
+                cx="50"
+                cy="50"
+                r={RING_R}
+                fill="none"
+                stroke="currentColor"
+                strokeOpacity="0.25"
+                strokeWidth="1"
+              />
+              <circle
+                ref={ringRef}
+                cx="50"
+                cy="50"
+                r={RING_R}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeDasharray={RING_C}
+                strokeDashoffset={filteredProjects.length > 1 ? RING_C : 0}
               />
             </svg>
+            <span
+              aria-hidden="true"
+              className="relative font-acerok text-[clamp(14px,1.75vw,34px)] font-light leading-none"
+            >
+              {String(activeProjectIndex + 1).padStart(2, "0")}
+            </span>
           </div>
-        ))}
+        </div>
       </div>
 
-      {/* Following Cursor dengan SVG berputar khusus section Works */}
       <div
         ref={cursorRef}
         aria-hidden="true"
-        className="pointer-events-none fixed top-0 left-0 z-[70] hidden select-none will-change-transform [@media(pointer:fine)]:block"
+        className="pointer-events-none fixed left-0 top-0 z-[70] hidden select-none will-change-transform [@media(pointer:fine)]:block"
       >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={cursorIconRef}
           src="/cursorFollowing.svg"
           alt=""
-          className="w-[105px] h-[105px] select-none pointer-events-none drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+          className="h-[105px] w-[105px] select-none drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          ref={viewTextRef}
+          src="/view-text.png"
+          alt=""
+          className="absolute left-1/2 top-1/2 h-auto w-[54px] -translate-x-1/2 -translate-y-1/2 select-none"
         />
       </div>
     </section>

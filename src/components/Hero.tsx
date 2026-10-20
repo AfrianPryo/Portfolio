@@ -211,7 +211,7 @@ export default function Hero() {
       <div
         ref={curtainRef}
         aria-hidden
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black select-none pointer-events-none will-change-transform"
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black select-none pointer-events-none will-change-transform"
       >
         {/* Logo Putih yang perlahan terisi Merah dari Bawah */}
         <div className="relative w-[min(38vw,420px)] min-w-[220px] aspect-[1217/431]">
@@ -261,8 +261,10 @@ export default function Hero() {
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/hero-person.png"
+          src="/hero-person.webp"
           alt="Afrian"
+          fetchPriority="high"
+          decoding="async"
           data-reveal
           data-person
           className="h-full w-auto max-w-[98vw] -scale-x-100 object-contain object-bottom drop-shadow-[0_28px_70px_rgba(0,0,0,0.9)]"
