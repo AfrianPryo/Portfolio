@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import Navbar from "./Navbar";
@@ -17,22 +17,6 @@ export default function Hero() {
   const anchorRef = useRef<HTMLDivElement>(null);
   const curtainRef = useRef<HTMLDivElement>(null);
   const fillLogoRef = useRef<HTMLDivElement>(null);
-
-  const [fallback, setFallback] = useState(false);
-  const handleUnsupported = useCallback(() => setFallback(true), []);
-
-  useEffect(() => {
-    if (fallback) {
-      gsap.to("[data-ornament]", {
-        autoAlpha: 1,
-        clipPath: "inset(0% 0% 0% 0%)",
-        scale: 1,
-        yPercent: 0,
-        duration: 1.2,
-        ease: "power3.out",
-      });
-    }
-  }, [fallback]);
 
   useGSAP(
     () => {
@@ -71,15 +55,6 @@ export default function Hero() {
           gsap.set("[data-person]", { autoAlpha: 0, y: 70 });
           gsap.set("[data-nav]", { autoAlpha: 0, y: -15 });
 
-          if (fallback) {
-            gsap.set("[data-ornament]", {
-              autoAlpha: 1,
-              clipPath: "inset(0% 50% 0% 50%)",
-              scale: 0.9,
-              yPercent: 14,
-              transformOrigin: "50% 50%",
-            });
-          }
 
           // ===== Timeline Intro Layar Hitam Preloader (Logo Putih -> Merah -> Fade Out) =====
           const curtain = curtainRef.current;
@@ -134,19 +109,6 @@ export default function Hero() {
           "+=0.08"
         );
 
-        if (fallback) {
-          tl.to(
-            "[data-ornament]",
-            {
-              clipPath: "inset(0% 0% 0% 0%)",
-              scale: 1,
-              yPercent: 0,
-              duration: 1.8,
-              ease: "expo.out",
-            },
-            "-=0.7"
-          );
-        }
 
         // 5. Navbar dan tombol CTA menyusul masuk
         tl.to(
@@ -155,17 +117,6 @@ export default function Hero() {
           "-=0.6"
         );
 
-        // Fallback ornamen melayang pelan setelah muncul
-        if (fallback) {
-          gsap.to("[data-float]", {
-            y: -8,
-            duration: 3.2,
-            ease: "sine.inOut",
-            yoyo: true,
-            repeat: -1,
-            delay: 2,
-          });
-        }
       }
 
       // Parallax mengikuti mouse (hanya perangkat dengan pointer halus)
@@ -199,7 +150,7 @@ export default function Hero() {
         return () => pointer.revert();
       });
     },
-    { scope: root, dependencies: [fallback] }
+    { scope: root }
   );
 
   return (
@@ -278,19 +229,11 @@ export default function Hero() {
       >
         <div
           ref={anchorRef}
-          data-ornament
-          data-reveal={fallback ? true : undefined}
           className="relative w-full"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            data-float={fallback ? true : undefined}
-            src="/ornament.svg"
-            alt=""
-            width={1217}
-            height={431}
-            className={`block h-auto w-full ${fallback ? "" : "invisible"}`}
-          />
+          {/* Spacer transparan (tidak pernah ditampilkan): hanya memberi anchor rasio 1217:431
+              untuk menghitung posisi & ukuran ornamen 3D. */}
+          <div aria-hidden className="block w-full aspect-[1217/431]" />
         </div>
       </div>
 
@@ -310,12 +253,7 @@ export default function Hero() {
       <CtaButton />
 
       {/* Canvas Three.js — ornamen 3D di depan foto siluet */}
-      {!fallback && (
-        <OrnamentScene
-          anchorRef={anchorRef}
-          onUnsupported={handleUnsupported}
-        />
-      )}
+      <OrnamentScene anchorRef={anchorRef} />
     </section>
   );
 }

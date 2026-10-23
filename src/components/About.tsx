@@ -213,15 +213,8 @@ export default function About() {
             id="about-ornament-anchor"
             className="relative aspect-[1217/431] w-[min(68vw,740px)] min-w-[280px]"
           >
-            {/* Gambar fallback transparan untuk kalkulasi dimensi dan fallback 2D */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/ornament.svg"
-              alt=""
-              width={1217}
-              height={431}
-              className="pointer-events-none invisible block h-auto w-full select-none"
-            />
+            {/* Spacer transparan: hanya untuk acuan posisi & ukuran ornamen 3D */}
+            <div aria-hidden className="pointer-events-none block w-full aspect-[1217/431]" />
           </div>
         </div>
 

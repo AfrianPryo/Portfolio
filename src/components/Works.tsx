@@ -1,72 +1,169 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from "react";
+import { createPortal } from "react-dom";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
+import { PROJECTS, type Project, type ProjectCategory } from "@/lib/projects";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-type ProjectCategory = "website" | "design" | "art";
+// Urutan kategori: proyek sekategori selalu berdekatan.
+const CATEGORY_ORDER: ProjectCategory[] = ["website", "design", "art"];
 
-const CATEGORIES: { id: ProjectCategory; label: string }[] = [
-  { id: "website", label: "WEBSITE" },
-  { id: "design", label: "DESIGN" },
-  { id: "art", label: "ART" },
+const SORTED_PROJECTS: Project[] = [...PROJECTS].sort(
+  (a, b) =>
+    CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category)
+);
+
+const TOTAL = SORTED_PROJECTS.length;
+
+// Pilihan rasio gambar (lebar : tinggi) dan batas jumlah gambar per proyek.
+const RATIO_POOL = [2 / 3, 3 / 4, 4 / 5, 1, 5 / 4, 4 / 3, 3 / 2, 16 / 9, 2 / 1];
+const MIN_IMAGES = 2;
+const MAX_IMAGES = 5;
+const GAP = 10; // px, harus sama dengan gap pada baris gambar
+// Total rasio maksimum satu baris. Dengan tinggi baris yang sama di semua
+// proyek, batas ini menjaga baris tetap muat di lebar layar.
+const MAX_RATIO_SUM = 3;
+
+const PALETTE = [
+  ["#1d1d1b", "#ff4d1c"],
+  ["#0b1a3a", "#2f6bff"],
+  ["#2a1a12", "#ffb347"],
+  ["#10201c", "#3ddc97"],
+  ["#241233", "#c77dff"],
+  ["#2b0f14", "#ff5d73"],
 ];
 
-// Wall (greek-wall.webp) sudah dipotong rapat: 2735x1346, pilar menyentuh tepi
-// atas & bawah. Stage selalu setinggi viewport (atas/bawah tidak pernah
-// terpotong); bagian samping boleh terpotong di layar sempit. Semua elemen
-// dekor (frame, kartu, menu) diposisikan dalam persen dari stage ini.
-const WALL_RATIO = 2735 / 1046;
-// Stretch horizontal: lebar wall = tinggi layar x WALL_RATIO x WALL_STRETCH_X.
-// 1 = proporsi asli, >1 = pilar lebih lebar (sisi kiri-kanan makin terpotong).
-const WALL_STRETCH_X = 1.25;
-// Stretch vertikal: tinggi wall (dan stage sticky) = tinggi layar x
-// WALL_STRETCH_Y. 1 = pas setinggi layar, >1 = wall lebih tinggi dan TIDAK
-// dipotong; section ditambah panjang yang sama supaya durasi pin/scroll
-// proyek tetap sama, dan sisa wall terlihat saat section di-scroll masuk/keluar.
-const WALL_STRETCH_Y = 1.35;
-const WALL_EXTRA_Y = Math.max(WALL_STRETCH_Y, 1) - 1;
-// Pin scroll (pergantian preview proyek) tidak mulai saat atas section
-// menyentuh atas layar, tapi setelah section di-scroll biasa sebesar
-// PIN_OFFSET_Y x tinggi layar (stage menempel dengan atasnya di
-// -PIN_OFFSET_Y x tinggi layar). Dibatasi WALL_EXTRA_Y supaya bawah stage
-// tidak pernah terlihat kosong saat pin aktif.
-const PIN_OFFSET_Y = Math.min(0.21, WALL_EXTRA_Y);
-// Posisi vertikal dari desain (persen tinggi layar saat pin aktif) diubah ke
-// persen layer stage, yang sudah naik sebesar PIN_OFFSET_Y.
-const pinTop = (viewportPercent: number) =>
-  `${viewportPercent + PIN_OFFSET_Y * 100}%`;
-// Lingkaran progres (viewBox 100): keliling dipakai untuk stroke-dashoffset.
-const RING_R = 48;
-const RING_C = 2 * Math.PI * RING_R;
-// Skala awal lingkaran kursor (lebih kecil); membesar ke 1 saat hover preview.
-const CURSOR_BASE_SCALE = 0.55;
-// Garis atas title & deskripsi (persen tinggi layar saat pin aktif). Keduanya
-// memakai nilai yang sama dan menempel dari ATAS (tidak di-center), jadi baris
-// pertama selalu sejajar di sumbu x berapa pun jumlah barisnya.
-const TEXT_TOP = 46.7;
-// Warna teks title/deskripsi + bintang (merah marun gelap sesuai desain).
-const INK = "#3b0c10";
+// Peran cadangan per kategori, dipakai kalau proyek belum punya data.
+const FALLBACK_ROLE: Record<ProjectCategory, string> = {
+  website: "Design & Development",
+  design: "Visual Design",
+  art: "Illustration",
+};
 
-// Bintang 4 sudut dari /icon-custom/Plus.svg. SVG-nya berwarna putih, jadi
-// dipakai sebagai mask supaya warnanya mengikuti INK. Posisinya (left/top
-// dalam px, titik tengah bintang) diisi lewat pengukuran di useGSAP supaya
-// selalu menempel di awal baris pertama / akhir baris terakhir teks, berapa
-// pun jumlah baris dan panjang katanya.
-const STAR_MASK = "url(/icon-custom/Plus.svg)";
+// Teknologi cadangan per kategori, dipakai kalau proyek belum punya data.
+const FALLBACK_TECH: Record<ProjectCategory, string[]> = {
+  website: ["Next.js", "TypeScript", "Tailwind CSS", "GSAP"],
+  design: ["Figma", "Illustrator", "Photoshop"],
+  art: ["Procreate", "Photoshop", "Blender"],
+};
 
-function Star() {
+// Pengacak berbenih: hasil acak selalu sama di server dan client, jadi tidak
+// ada hydration mismatch, tetapi tiap proyek tetap berbeda.
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Gambar dummy berupa SVG gradien (data URI), diganti gambar asli nanti.
+function dummyImage(seed: number, ratio: number) {
+  const w = 800;
+  const h = Math.round(w / ratio);
+  const [a, b] = PALETTE[seed % PALETTE.length];
+  const cx = 20 + ((seed * 37) % 60);
+  const cy = 20 + ((seed * 53) % 60);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><radialGradient id="g" cx="${cx}%" cy="${cy}%" r="75%"><stop offset="0" stop-color="${b}"/><stop offset="1" stop-color="${a}"/></radialGradient></defs><rect width="100%" height="100%" fill="url(#g)"/></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+type DummyImage = { ratio: number; src: string };
+
+// Tiap proyek mendapat jumlah dan rasio gambar sendiri; susunannya dijamin
+// tidak sama dengan proyek sebelumnya.
+const SLIDE_IMAGES: DummyImage[][] = (() => {
+  const result: DummyImage[][] = [];
+  let previous = "";
+
+  SORTED_PROJECTS.forEach((_, index) => {
+    let signature = "";
+    let ratios: number[] = [];
+    let attempt = 0;
+
+    do {
+      const rand = mulberry32((index + 1) * 7919 + attempt * 104729);
+      const count =
+        MIN_IMAGES + Math.floor(rand() * (MAX_IMAGES - MIN_IMAGES + 1));
+
+      ratios = Array.from(
+        { length: count },
+        () => RATIO_POOL[Math.floor(rand() * RATIO_POOL.length)]
+      );
+      // Buang gambar terakhir sampai total lebar muat (minimal tetap 2).
+      while (
+        ratios.length > MIN_IMAGES &&
+        ratios.reduce((s, r) => s + r, 0) > MAX_RATIO_SUM
+      ) {
+        ratios.pop();
+      }
+      signature = ratios.map((r) => r.toFixed(2)).join("|");
+      attempt += 1;
+    } while (signature === previous && attempt < 20);
+
+    previous = signature;
+    result.push(
+      ratios.map((ratio, i) => ({
+        ratio,
+        src: dummyImage(index * 5 + i, ratio),
+      }))
+    );
+  });
+
+  return result;
+})();
+
+// Foto tambahan untuk galeri di sidebar (di luar foto pada baris section).
+// Pola rasio diputar per proyek supaya tiap galeri terasa berbeda.
+const GALLERY_RATIOS = [16 / 9, 4 / 5, 1, 3 / 2, 4 / 5, 16 / 9];
+
+const GALLERY_IMAGES: DummyImage[][] = SORTED_PROJECTS.map((_, index) =>
+  GALLERY_RATIOS.map((_, i) => {
+    const ratio = GALLERY_RATIOS[(i + index) % GALLERY_RATIOS.length];
+
+    return { ratio, src: dummyImage(100 + index * 7 + i, ratio) };
+  })
+);
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+// Pudar di tepi atas/bawah supaya baris yang keluar masuk terasa halus.
+const FADE_MASK =
+  "linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%)";
+
+const FOCUSABLE = "a[href], button:not([disabled])";
+const subscribeToMount = () => () => {};
+const getMountedSnapshot = () => true;
+const getServerMountedSnapshot = () => false;
+
+// Plus.svg berwarna putih, dipakai sebagai mask supaya warnanya mengikuti
+// utilitas bg-* pada pemakainya.
+const PLUS_MASK = "url(/icon-custom/Plus.svg)";
+
+function Plus({ className = "" }: { className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className={`works-star pointer-events-none absolute left-0 top-0 block aspect-square w-[clamp(7px,0.95vw,17px)] -translate-x-1/2 -translate-y-1/2`}
+      className={`block ${className}`}
       style={{
-        backgroundColor: INK,
-        WebkitMaskImage: STAR_MASK,
-        maskImage: STAR_MASK,
+        WebkitMaskImage: PLUS_MASK,
+        maskImage: PLUS_MASK,
         WebkitMaskRepeat: "no-repeat",
         maskRepeat: "no-repeat",
         WebkitMaskPosition: "center",
@@ -78,828 +175,659 @@ function Star() {
   );
 }
 
-const PROJECTS: {
-  title: string;
-  description: string;
-  category: ProjectCategory;
-  image: string;
-}[] = [
-  {
-    title: "AGILISM ABCDE",
-    description: "Proyek website pilihan.",
-    category: "website",
-    image: "/projects/project-1.svg",
-  },
-  {
-    title: "SOLARIS",
-    description: "Neo-brutalist commerce.",
-    category: "website",
-    image: "/projects/project-5.svg",
-  },
-  {
-    title: "CHRONO ARCHIVE",
-    description: "Kinetic typography experiment.",
-    category: "design",
-    image: "/projects/project-2.svg",
-  },
-  {
-    title: "LUMEN ANALYTICS",
-    description: "Real-time GPU trading visualizer.",
-    category: "design",
-    image: "/projects/project-3.svg",
-  },
-  {
-    title: "AURA SOUND LAB",
-    description: "Generative frequency synthesis.",
-    category: "art",
-    image: "/projects/project-4.svg",
-  },
-];
-
 export default function Works() {
-  const sectionRef = useRef<HTMLElement>(null);
-  const previewRef = useRef<HTMLDivElement>(null);
-  const cursorRef = useRef<HTMLDivElement>(null);
-  const cursorIconRef = useRef<HTMLImageElement>(null);
-  const viewTextRef = useRef<HTMLImageElement>(null);
-  const ringRef = useRef<SVGCircleElement>(null);
-  const activeProjectIndexRef = useRef(0);
-  const pointerRef = useRef({ x: 0, y: 0, inside: false });
-  const [activeCategory, setActiveCategory] =
-    useState<ProjectCategory>("website");
-  const [activeProjectIndex, setActiveProjectIndex] = useState(0);
-  const [layoutKey, setLayoutKey] = useState(0);
-  const filteredProjects = PROJECTS.filter(
-    (project) => project.category === activeCategory
+  const rootRef = useRef<HTMLElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const scrimRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const panelReadyRef = useRef(false);
+
+  const [active, setActive] = useState(0);
+  const mounted = useSyncExternalStore(
+    subscribeToMount,
+    getMountedSnapshot,
+    getServerMountedSnapshot
   );
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<{
+    project: number;
+    image: number;
+  } | null>(null);
 
-  // Baris deskripsi dihitung dari layout, jadi hitung ulang (lewat layoutKey)
-  // setelah font siap dan saat lebar layar berubah.
+  const selectedProject = selected ? SORTED_PROJECTS[selected.project] : null;
+  const selectedImage = selected
+    ? SLIDE_IMAGES[selected.project][selected.image]
+    : null;
+
+  // Data tambahan proyek yang dipilih (dengan nilai cadangan).
+  const extra: Partial<Project> = selectedProject ?? {};
+  const technologies =
+    extra.technologies && extra.technologies.length
+      ? extra.technologies
+      : selectedProject
+        ? FALLBACK_TECH[selectedProject.category] ?? []
+        : [];
+  const meta = [
+    { label: "Tahun", value: extra.year },
+    {
+      label: "Peran",
+      value:
+        extra.role ??
+        (selectedProject ? FALLBACK_ROLE[selectedProject.category] : undefined),
+    },
+    { label: "Klien", value: extra.client },
+    { label: "Durasi", value: extra.duration },
+  ].filter((item) => item.value !== undefined && item.value !== "");
+  const overviewParagraphs = (extra.overview ?? "")
+    .split(/\n\s*\n/)
+    .map((text) => text.trim())
+    .filter(Boolean);
+  const highlights = extra.highlights ?? [];
+  // Galeri: foto asli kalau ada, kalau tidak pakai foto dummy.
+  const galleryImages: DummyImage[] = selected
+    ? extra.images && extra.images.length
+      ? extra.images.map((src) => ({ ratio: 4 / 3, src }))
+      : GALLERY_IMAGES[selected.project]
+    : [];
+
+  // Satu proyek = satu kesatuan: foto mana pun yang diklik, sidebar selalu
+  // terbuka dengan isi yang sama (mulai dari foto pertama).
+  const openProject = (project: number, trigger: HTMLElement) => {
+    triggerRef.current = trigger;
+    setSelected({ project, image: 0 });
+    setOpen(true);
+  };
+
+  const closeProject = () => setOpen(false);
+
+  // Ganti foto utama di sidebar tanpa menutupnya.
+  const selectImage = (image: number) =>
+    setSelected((current) => (current ? { ...current, image } : current));
+
+  // Saat sidebar terbuka: kunci scroll, matikan interaksi section, Esc untuk
+  // menutup, Tab dijaga tetap di dalam sidebar. Fokus dikembalikan ke foto
+  // yang diklik saat ditutup.
   useEffect(() => {
-    let timer: number | undefined;
-    let lastWidth = window.innerWidth;
-    const bump = () => setLayoutKey((key) => key + 1);
-    const onResize = () => {
-      if (window.innerWidth === lastWidth) return;
-      lastWidth = window.innerWidth;
-      window.clearTimeout(timer);
-      timer = window.setTimeout(bump, 250);
-    };
+    if (!open) return;
 
-    document.fonts?.ready.then(bump);
-    window.addEventListener("resize", onResize);
+    const root = rootRef.current;
+    const panel = panelRef.current;
+    const previousOverflow = document.body.style.overflow;
+    const previousPadding = document.body.style.paddingRight;
+    const scrollbar =
+      window.innerWidth - document.documentElement.clientWidth;
 
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("resize", onResize);
-    };
-  }, []);
+    document.body.style.setProperty("overflow", "hidden");
+    // Cegah halaman bergeser saat scrollbar hilang.
+    if (scrollbar > 0) {
+      document.body.style.setProperty("padding-right", `${scrollbar}px`);
+    }
+    root?.setAttribute("inert", "");
 
-  useGSAP(
-    () => {
-      const section = sectionRef.current;
-      const preview = previewRef.current;
-      const cursor = cursorRef.current;
-      const cursorIcon = cursorIconRef.current;
-      const viewText = viewTextRef.current;
-
-      if (!section || !preview || !cursor || !cursorIcon || !viewText) return;
-
-      const projectImages = gsap.utils.toArray<HTMLElement>(
-        ".works-project-image",
-        section
-      );
-      const projectTitles = gsap.utils.toArray<HTMLElement>(
-        ".works-project-title",
-        section
-      );
-      const projectDescriptions = gsap.utils.toArray<HTMLElement>(
-        ".works-project-description",
-        section
-      );
-      const projectCaptions = [...projectTitles, ...projectDescriptions];
-      const lastProjectIndex = filteredProjects.length - 1;
-
-      // Lingkaran progres PER HALAMAN: tiap proyek mengisi cincin dari kosong
-      // ke penuh selama rentang scroll miliknya sendiri, lalu kosong lagi di
-      // halaman berikutnya (kategori 1 proyek = penuh). Batas halaman sama
-      // dengan pergantian angka/title (Math.round).
-      const ring = ringRef.current;
-      const setRing = (progress: number) => {
-        if (!ring) return;
-        let fraction = 1;
-
-        if (lastProjectIndex > 0) {
-          const position = progress * lastProjectIndex;
-          const page = Math.max(
-            0,
-            Math.min(lastProjectIndex, Math.round(position))
-          );
-          const from = page === 0 ? 0 : page - 0.5;
-          const to = page === lastProjectIndex ? lastProjectIndex : page + 0.5;
-
-          fraction = Math.max(0, Math.min(1, (position - from) / (to - from)));
-        }
-
-        ring.style.strokeDashoffset = `${RING_C * (1 - fraction)}`;
-      };
-      setRing(0);
-
-      // Animasi teks. Title: tiap karakter muncul membesar + opacity naik.
-      // Deskripsi: tiap baris muncul dari kanan bawah. Baris dideteksi dari
-      // posisi vertikal kata (offsetTop) karena pembungkusan teks dinamis.
-      const titleChars = projectTitles.map((title) =>
-        gsap.utils.toArray<HTMLElement>(".works-title-char", title)
-      );
-      const descLines = projectDescriptions.map((description) => {
-        const lines: HTMLElement[][] = [];
-        let lineTop = Number.NEGATIVE_INFINITY;
-
-        gsap.utils
-          .toArray<HTMLElement>(".works-desc-word", description)
-          .forEach((word) => {
-            if (Math.abs(word.offsetTop - lineTop) > 4) {
-              lines.push([]);
-              lineTop = word.offsetTop;
-            }
-            lines[lines.length - 1].push(word);
-          });
-
-        return lines;
-      });
-      const allTitleChars = titleChars.flat();
-      const allDescWords = descLines.flat(2);
-
-      // Penempatan bintang (px, relatif ke blok teks masing-masing), satu
-      // bintang per teks di baris pertama.
-      // Title (rata kiri): di awal baris pertama (kiri-atas).
-      // Deskripsi (rata kanan): di ujung baris pertama (kanan-atas).
-      // Offset dalam em supaya ikut skala font (clamp) di semua ukuran layar.
-      const placeStar = (host: HTMLElement, x: number, y: number) => {
-        const star = host.querySelector<HTMLElement>(".works-star");
-
-        if (!star) return;
-        star.style.left = `${x}px`;
-        star.style.top = `${y}px`;
-      };
-
-      projectTitles.forEach((title, index) => {
-        const chars = titleChars[index];
-
-        if (!chars?.length) return;
-
-        const first = chars[0];
-        const fs = parseFloat(getComputedStyle(title).fontSize);
-
-        placeStar(
-          title,
-          first.offsetLeft - 0.37 * fs,
-          first.offsetTop - 0.16 * fs
-        );
-      });
-
-      projectDescriptions.forEach((description, index) => {
-        const lines = descLines[index];
-
-        if (!lines?.length) return;
-
-        const firstLine = lines[0];
-        const endOfFirst = firstLine[firstLine.length - 1];
-        const fs = parseFloat(getComputedStyle(description).fontSize);
-
-        placeStar(
-          description,
-          endOfFirst.offsetLeft + endOfFirst.offsetWidth + 0.3 * fs,
-          firstLine[0].offsetTop - 0.25 * fs
-        );
-      });
-
-      const addTitleIn = (
-        tl: gsap.core.Timeline,
-        index: number,
-        at: number,
-        duration: number,
-        total: number
-      ) => {
-        if (!titleChars[index]?.length) return;
-        tl.fromTo(
-          titleChars[index],
-          { autoAlpha: 0, scale: 0.55 },
-          {
-            autoAlpha: 1,
-            scale: 1,
-            duration,
-            ease: "power2.out",
-            stagger: { amount: total },
-            immediateRender: false,
-          },
-          at
-        );
-      };
-      const addDescIn = (
-        tl: gsap.core.Timeline,
-        index: number,
-        at: number,
-        duration: number,
-        gap: number
-      ) => {
-        descLines[index]?.forEach((words, lineIndex) => {
-          tl.fromTo(
-            words,
-            { autoAlpha: 0, x: 28, y: 22 },
-            {
-              autoAlpha: 1,
-              x: 0,
-              y: 0,
-              duration,
-              ease: "power2.out",
-              immediateRender: false,
-            },
-            at + lineIndex * gap
-          );
-        });
-      };
-
-      // Image stretch: gambar aktif memenuhi kartu (scaleY 1), sisanya
-      // "terlipat" ke bawah kartu (scaleY 0, origin bawah) menunggu giliran.
-      gsap.set(projectCaptions, { autoAlpha: 0 });
-      gsap.set([projectTitles[0], projectDescriptions[0]], { autoAlpha: 1 });
-      gsap.set(projectImages, {
-        scaleY: (i) => (i === 0 ? 1 : 0),
-        transformOrigin: "50% 100%",
-      });
-
-      const updateActiveProject = (index: number) => {
-        const nextIndex = Math.max(0, Math.min(lastProjectIndex, index));
-
-        if (activeProjectIndexRef.current !== nextIndex) {
-          activeProjectIndexRef.current = nextIndex;
-          setActiveProjectIndex(nextIndex);
-        }
-      };
-
-      const showProjectImmediately = (index: number) => {
-        updateActiveProject(index);
-        gsap.set(projectImages, {
-          scaleY: (i) => (i === index ? 1 : 0),
-          transformOrigin: "50% 100%",
-        });
-        gsap.set(projectCaptions, { autoAlpha: 0, y: 0 });
-        gsap.set(
-          [projectTitles[index], projectDescriptions[index]],
-          { autoAlpha: 1 }
-        );
-      };
-
-      // Keadaan awal animasi teks + intro proyek pertama (diputar sekali saat
-      // section mulai masuk layar). Mode reduced-motion: teks langsung tampil.
-      const textMedia = gsap.matchMedia();
-
-      textMedia.add("(prefers-reduced-motion: no-preference)", () => {
-        gsap.set(allTitleChars, {
-          autoAlpha: 0,
-          scale: 0.55,
-          transformOrigin: "50% 80%",
-        });
-        gsap.set(allDescWords, { autoAlpha: 0, x: 28, y: 22 });
-
-        const intro = gsap.timeline({ paused: true });
-        addTitleIn(intro, 0, 0, 0.7, 0.55);
-        addDescIn(intro, 0, 0.3, 0.8, 0.14);
-
-        if (section.getBoundingClientRect().top < window.innerHeight * 0.2) {
-          intro.play();
-        } else {
-          ScrollTrigger.create({
-            trigger: section,
-            start: "top 20%",
-            once: true,
-            onEnter: () => intro.play(),
-          });
-        }
-      });
-
-      const projectMedia = gsap.matchMedia();
-
-      if (lastProjectIndex > 0) {
-        const scrollTriggerOptions = {
-          trigger: section,
-          start: () =>
-            `top+=${Math.round(PIN_OFFSET_Y * window.innerHeight)} top`,
-          end: () =>
-            `+=${lastProjectIndex * Math.max(window.innerHeight, 600)}`,
-          invalidateOnRefresh: true,
-        };
-
-        projectMedia.add("(prefers-reduced-motion: no-preference)", () => {
-          const timeline = gsap.timeline({
-            scrollTrigger: {
-              ...scrollTriggerOptions,
-              scrub: 0.8,
-              onUpdate: (self) => {
-                setRing(self.progress);
-                updateActiveProject(
-                  Math.round(self.progress * lastProjectIndex)
-                );
-              },
-            },
-          });
-
-          // Referensi "Image Stretch Transition":
-          // - gambar lama terjepit ke ATAS (scaleY 1 -> 0, origin atas)
-          // - gambar baru terentang dari BAWAH (scaleY 0 -> 1, origin bawah)
-          // Tinggi keduanya selalu berjumlah 100% sehingga batasnya naik
-          // mulus tanpa fade/clip. Gambar ikut tergepit (bukan di-crop).
-          const HOLD = 0.2; // jeda diam sebelum & sesudah transisi
-          const SPAN = 1 - HOLD * 2;
-          const EASE = "power3.inOut";
-
-          for (let index = 1; index <= lastProjectIndex; index += 1) {
-            const start = index - 1 + HOLD;
-
-            timeline.fromTo(
-              projectImages[index - 1],
-              { scaleY: 1, transformOrigin: "50% 0%" },
-              {
-                scaleY: 0,
-                transformOrigin: "50% 0%",
-                duration: SPAN,
-                ease: EASE,
-                immediateRender: false,
-              },
-              start
-            );
-            timeline.fromTo(
-              projectImages[index],
-              { scaleY: 0, transformOrigin: "50% 100%" },
-              {
-                scaleY: 1,
-                transformOrigin: "50% 100%",
-                duration: SPAN,
-                ease: EASE,
-                immediateRender: false,
-              },
-              start
-            );
-            timeline.to(
-              [projectTitles[index - 1], projectDescriptions[index - 1]],
-              {
-                autoAlpha: 0,
-                y: -18,
-                duration: SPAN * 0.4,
-                ease: "none",
-              },
-              start + SPAN * 0.2
-            );
-            // Wadah title & deskripsi langsung tampil; yang beranimasi adalah
-            // karakter title (membesar + opacity) dan baris deskripsi.
-            const enterAt = start + SPAN * 0.45;
-
-            timeline.fromTo(
-              [projectTitles[index], projectDescriptions[index]],
-              { autoAlpha: 0 },
-              {
-                autoAlpha: 1,
-                duration: SPAN * 0.02,
-                ease: "none",
-                immediateRender: false,
-              },
-              enterAt
-            );
-            addTitleIn(timeline, index, enterAt, SPAN * 0.2, SPAN * 0.25);
-            addDescIn(
-              timeline,
-              index,
-              enterAt + SPAN * 0.08,
-              SPAN * 0.2,
-              SPAN * 0.07
-            );
-          }
-          // padding agar progres scroll 0..1 = seluruh rangkaian proyek
-          timeline.set({}, {}, lastProjectIndex);
-        });
-
-        projectMedia.add("(prefers-reduced-motion: reduce)", () => {
-          const trigger = ScrollTrigger.create({
-            ...scrollTriggerOptions,
-            onUpdate: (self) => {
-              setRing(self.progress);
-              showProjectImmediately(
-                Math.round(self.progress * lastProjectIndex)
-              );
-            },
-          });
-
-          setRing(trigger.progress);
-          showProjectImmediately(
-            Math.round(trigger.progress * lastProjectIndex)
-          );
-        });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        return;
       }
 
-      const cursorMedia = gsap.matchMedia();
+      if (event.key !== "Tab" || !panel) return;
 
-      cursorMedia.add(
-        "(pointer: fine) and (prefers-reduced-motion: no-preference)",
-        () => {
-          const pointer = pointerRef.current;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
 
-          // Efek ini dibuat ulang setiap kategori diganti. Kalau kursor sudah
-          // berada di dalam section (mis. habis klik nav), pointerenter tidak
-          // terpicu lagi, jadi langsung tampilkan di posisi terakhirnya.
-          gsap.set(cursor, {
-            xPercent: -50,
-            yPercent: -50,
-            x: pointer.x,
-            y: pointer.y,
-            autoAlpha: pointer.inside ? 1 : 0,
-            scale: pointer.inside ? CURSOR_BASE_SCALE : 0.3,
-          });
-          gsap.set(viewText, { autoAlpha: 0, scale: 0.8 });
+      if (!items.length) return;
 
-          const spin = gsap.to(cursorIcon, {
-            rotation: 360,
-            duration: 8,
-            repeat: -1,
-            ease: "none",
-          });
-          const xTo = gsap.quickTo(cursor, "x", {
-            duration: 0.28,
-            ease: "power3.out",
-          });
-          const yTo = gsap.quickTo(cursor, "y", {
-            duration: 0.28,
-            ease: "power3.out",
-          });
+      const first = items[0];
+      const last = items[items.length - 1];
 
-          const moveCursor = (event: PointerEvent) => {
-            pointer.x = event.clientX;
-            pointer.y = event.clientY;
-            pointer.inside = true;
-            xTo(event.clientX);
-            yTo(event.clientY);
-          };
-          const showCursor = (event: PointerEvent) => {
-            moveCursor(event);
-            gsap.to(cursor, {
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.setProperty("overflow", previousOverflow);
+      document.body.style.setProperty("padding-right", previousPadding);
+      root?.removeAttribute("inert");
+      triggerRef.current?.focus({ preventScroll: true });
+    };
+  }, [open]);
+
+  // Sidebar selalu mulai dari atas setiap kali proyek dibuka.
+  useEffect(() => {
+    if (open) panelRef.current?.scrollTo({ top: 0 });
+  }, [open, selected?.project]);
+
+  // Animasi sidebar: masuk dari kiri, isinya menyusul berurutan.
+  useGSAP(
+    () => {
+      const panel = panelRef.current;
+      const scrim = scrimRef.current;
+
+      if (!mounted || !panel || !scrim) return;
+
+      const reduce = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      const animate = panelReadyRef.current && !reduce;
+      const items = gsap.utils.toArray<HTMLElement>("[data-panel-item]", panel);
+
+      panelReadyRef.current = true;
+
+      if (open) {
+        gsap.to(scrim, {
+          autoAlpha: 1,
+          duration: animate ? 0.4 : 0,
+          overwrite: "auto",
+        });
+        gsap.to(panel, {
+          xPercent: 0,
+          autoAlpha: 1,
+          duration: animate ? 0.7 : 0,
+          ease: "power3.out",
+          overwrite: "auto",
+          onStart: () => closeRef.current?.focus({ preventScroll: true }),
+        });
+
+        if (animate) {
+          gsap.fromTo(
+            items,
+            { autoAlpha: 0, y: 18 },
+            {
               autoAlpha: 1,
-              scale: CURSOR_BASE_SCALE,
-              duration: 0.3,
-              ease: "back.out(1.7)",
-            });
-          };
-          const hideCursor = () => {
-            pointer.inside = false;
-            gsap.to(cursor, {
-              autoAlpha: 0,
-              scale: 0.3,
-              duration: 0.25,
-              ease: "power2.in",
-            });
-          };
-          const showViewText = () => {
-            gsap.to(cursor, {
-              scale: 1,
-              duration: 0.35,
-              ease: "back.out(1.5)",
+              y: 0,
+              duration: 0.6,
+              stagger: 0.07,
+              delay: 0.25,
+              ease: "power3.out",
               overwrite: "auto",
-            });
-            gsap.to(viewText, {
-              autoAlpha: 1,
-              scale: 1,
-              duration: 0.2,
-              ease: "power2.out",
-            });
-          };
-          const hideViewText = () => {
-            gsap.to(cursor, {
-              scale: CURSOR_BASE_SCALE,
-              duration: 0.25,
-              ease: "power2.out",
-              overwrite: "auto",
-            });
-            gsap.to(viewText, {
-              autoAlpha: 0,
-              scale: 0.8,
-              duration: 0.15,
-              ease: "power2.in",
-            });
-          };
+            }
+          );
+        } else {
+          gsap.set(items, { autoAlpha: 1, y: 0 });
+        }
+      } else {
+        gsap.to(scrim, {
+          autoAlpha: 0,
+          duration: animate ? 0.35 : 0,
+          overwrite: "auto",
+        });
+        gsap.to(panel, {
+          xPercent: -100,
+          autoAlpha: 0,
+          duration: animate ? 0.5 : 0,
+          ease: "power3.in",
+          overwrite: "auto",
+        });
+      }
+    },
+    { dependencies: [open, mounted] }
+  );
 
-          section.addEventListener("pointermove", moveCursor);
-          section.addEventListener("pointerenter", showCursor);
-          section.addEventListener("pointerleave", hideCursor);
-          preview.addEventListener("pointerenter", showViewText);
-          preview.addEventListener("pointerleave", hideViewText);
+  // Section di-pin setinggi layar. Selama user scroll, hanya daftar proyek
+  // (nama + foto) yang bergerak naik; baris yang melewati tengah menjadi aktif.
+  useGSAP(
+    () => {
+      const root = rootRef.current;
+      const list = listRef.current;
 
-          return () => {
-            section.removeEventListener("pointermove", moveCursor);
-            section.removeEventListener("pointerenter", showCursor);
-            section.removeEventListener("pointerleave", hideCursor);
-            preview.removeEventListener("pointerenter", showViewText);
-            preview.removeEventListener("pointerleave", hideViewText);
-            spin.kill();
-          };
+      if (!root || !list || TOTAL < 1) return;
+
+      const rows = gsap.utils.toArray<HTMLElement>("[data-slide]", list);
+      const first = rows[0];
+      const last = rows[rows.length - 1];
+
+      if (!first || !last) return;
+
+      // Posisi list saat baris pertama / terakhir tepat di tengah layar.
+      const startY = () =>
+        root.clientHeight / 2 - (first.offsetTop + first.offsetHeight / 2);
+      const endY = () =>
+        root.clientHeight / 2 - (last.offsetTop + last.offsetHeight / 2);
+
+      gsap.fromTo(
+        list,
+        { y: startY },
+        {
+          y: endY,
+          ease: "none",
+          scrollTrigger: {
+            trigger: root,
+            start: "top top",
+            end: () => `+=${Math.max(1, Math.round(startY() - endY()))}`,
+            pin: true,
+            pinSpacing: true,
+            scrub: 0.6,
+            anticipatePin: 1,
+            invalidateOnRefresh: true,
+            // Dihitung lebih dulu dari trigger section lain (mis. Contact)
+            // supaya jarak pin sudah masuk saat posisi mereka dihitung.
+            refreshPriority: 1,
+            onUpdate: (self) => {
+              setActive(
+                Math.round(self.progress * Math.max(0, TOTAL - 1))
+              );
+            },
+          },
         }
       );
 
-      return () => {
-        textMedia.revert();
-        projectMedia.revert();
-        cursorMedia.revert();
-      };
+      // Gambar dan font bisa menggeser layout; hitung ulang posisi trigger.
+      const refresh = () => ScrollTrigger.refresh();
+
+      window.addEventListener("load", refresh);
+      document.fonts?.ready.then(refresh);
+
+      return () => window.removeEventListener("load", refresh);
     },
-    {
-      scope: sectionRef,
-      dependencies: [activeCategory, layoutKey],
-      revertOnUpdate: true,
-    }
+    { scope: rootRef }
   );
 
   return (
     <section
-      ref={sectionRef}
+      ref={rootRef}
       id="works"
       aria-label="Karya"
-      className="relative isolate w-full [@media(pointer:fine)]:cursor-none"
-      style={{
-        height: `${
-          Math.max(filteredProjects.length * 100, 130) + WALL_EXTRA_Y * 100
-        }svh`,
-        minHeight: `${
-          Math.max(filteredProjects.length * 600, 780) + WALL_EXTRA_Y * 600
-        }px`,
-      }}
+      className="relative isolate h-svh w-full overflow-hidden bg-black"
     >
+      {/* Jendela tetap setinggi layar. Semua yang bergerak (daftar proyek)
+          dipotong keras di sini lewat overflow, clip-path, dan contain, jadi
+          tidak bisa keluar ke section lain. */}
       <div
-        className="sticky flex w-full items-start justify-center overflow-hidden"
+        className="absolute inset-0 overflow-hidden"
         style={{
-          top: `calc(-100svh * ${PIN_OFFSET_Y})`,
-          height: `calc(100svh * ${1 + WALL_EXTRA_Y})`,
+          clipPath: "inset(0)",
+          contain: "paint",
+          WebkitMaskImage: FADE_MASK,
+          maskImage: FADE_MASK,
         }}
       >
-        <div
-          aria-hidden="true"
-          className="absolute left-1/2 top-0 z-0 h-full -translate-x-1/2"
-          style={{ width: `calc(100svh * ${WALL_RATIO * WALL_STRETCH_X})` }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/greek-wall.webp"
-            alt=""
-            loading="lazy"
-            decoding="async"
-            draggable={false}
-            className="absolute inset-0 h-full w-full select-none"
-          />
-        </div>
+        <div ref={listRef} className="will-change-transform">
+          {SORTED_PROJECTS.map((project, index) => {
+            const isActive = index === active;
+            const images = SLIDE_IMAGES[index];
+            const ratioSum = images.reduce(
+              (sum, image) => sum + image.ratio,
+              0
+            );
+            const gaps = (images.length - 1) * GAP;
 
-        {/*
-          Frame + kartu di tengah layar, ukurannya mengikuti tinggi layar:
-          frame 99% tinggi layar (kotak y 19.3%-118.3%, bagian merah yang
-          terlihat sekitar y 30.7%-103.3%, di bawah ornamen kunci dan di atas
-          menu kategori; posisi ini dibaca saat pin aktif, ketika stage sudah
-          naik sebesar PIN_OFFSET_Y), rasio 465:647. Lubang frame (persen dari kotak frame)
-          x 23.6%-74.8%, y 20.6%-79.1% -> kartu dibuat lebih besar sekitar 3-4%
-          agar tepinya tertutup tebal frame.
-        */}
-        <article
-          aria-label="Pratinjau proyek"
-          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-svh"
-        >
-          <div className="absolute left-1/2 top-[19.3%] aspect-[465/647] h-[99%] -translate-x-1/2">
-            <div
-              ref={previewRef}
-              aria-label="Area pratinjau karya"
-              className="pointer-events-auto absolute left-[19.6%] top-[17.1%] h-[64.5%] w-[59.2%] overflow-hidden bg-[#d5d5d5]"
-            >
-              {filteredProjects.map((project, index) => (
-                <div
-                  key={project.title}
-                  aria-hidden={index !== activeProjectIndex}
-                  className="works-project-image absolute inset-0 will-change-transform"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={project.image}
-                    alt={`${project.title} project preview`}
-                    loading="lazy"
-                    decoding="async"
-                    draggable={false}
-                    className="h-full w-full select-none object-cover"
-                  />
-                </div>
-              ))}
-            </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/frame-red.png"
-              alt=""
-              aria-hidden="true"
-              loading="lazy"
-              decoding="async"
-              draggable={false}
-              className="pointer-events-none absolute inset-0 h-full w-full select-none"
-            />
-          </div>
-            <nav
-              aria-label="Kategori proyek"
-              className="pointer-events-auto absolute inset-x-0 top-[109.5%] flex -translate-y-1/2 items-center justify-center gap-[clamp(8px,1.6vw,24px)]"
-            >
-              {CATEGORIES.map((category) => {
-                const isActive = category.id === activeCategory;
-
-                return (
-                  <button
-                    key={category.id}
-                    type="button"
-                    aria-pressed={isActive}
-                    onClick={() => {
-                      activeProjectIndexRef.current = 0;
-                      setActiveProjectIndex(0);
-                      setActiveCategory(category.id);
-                      const section = sectionRef.current;
-
-                      if (section) {
-                        window.scrollTo({
-                          top:
-                            section.getBoundingClientRect().top +
-                            window.scrollY +
-                            PIN_OFFSET_Y * window.innerHeight,
-                          behavior: "smooth",
-                        });
-                      }
-                    }}
-                    className="group inline-flex items-center gap-1.5 font-acerok text-[clamp(10px,1.05vw,16px)] leading-none text-black/45 transition-colors duration-300 hover:text-black focus-visible:text-black focus-visible:outline-none"
+            return (
+              <article
+                key={project.slug}
+                data-slide
+                className="group/project relative flex w-full items-center px-[4vw] py-[clamp(6px,0.8vw,12px)] max-lg:py-5"
+              >
+                <div className="mx-auto flex w-full max-w-[1500px] items-start gap-[clamp(48px,5vw,80px)] max-lg:flex-col max-lg:items-start max-lg:gap-3">
+                  {/* Kiri: title proyek kecil.
+                      Mobile/tablet: satu baris header → [nomor] JUDUL ... kategori */}
+                  <div
+                    className={`flex shrink-0 flex-col gap-2 transition-opacity duration-500 max-lg:w-full max-lg:flex-row max-lg:items-baseline max-lg:gap-3 lg:w-[clamp(120px,14vw,220px)] group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
+                      isActive ? "opacity-100" : "opacity-30"
+                    }`}
                   >
-                    <span
-                      className={
-                        isActive
-                          ? "text-black"
-                          : "transition-transform duration-300 group-hover:-translate-x-1"
+                    {/* Nomor versi mobile (versi desktop ada di sisi foto) */}
+                    <span className="font-switzer text-[12px] leading-none text-flame/60 lg:hidden">
+                      [{pad(index + 1)}]
+                    </span>
+                    <h2 className="font-acerok text-[clamp(13px,1.1vw,18px)] font-normal uppercase leading-[1.1] text-flame max-lg:min-w-0 max-lg:text-[15px]">
+                      {project.title}
+                    </h2>
+                    <span className="font-switzer text-[clamp(11px,0.9vw,14px)] capitalize leading-none tracking-[-0.01em] text-flame/60 max-lg:ml-auto max-lg:text-[12px]">
+                      {project.category}
+                    </span>
+                  </div>
+
+                  {/* Kanan: gambar rata kanan. Semua proyek memakai tinggi
+                      baris yang sama; lebar tiap gambar mengikuti rasionya.
+                      Mobile/tablet: baris penuh selebar layar dengan tinggi
+                      seragam (gambar di-crop), maksimal 3 foto di < 640px. */}
+                  <div className="flex min-w-0 flex-1 justify-end max-lg:w-full">
+                    <div
+                      className="relative flex w-[var(--row-w)] max-w-full flex-col gap-2 [--row-h:clamp(110px,min(34svh,22vw),380px)] max-lg:w-full lg:gap-0"
+                      style={
+                        {
+                          "--row-w": `calc(var(--row-h) * ${ratioSum.toFixed(3)} + ${gaps}px)`,
+                        } as CSSProperties
                       }
                     >
-                      {category.label}
-                    </span>
-                    <span
-                      aria-hidden="true"
-                      className={`transition-all duration-300 ease-out ${
-                        isActive
-                          ? "translate-x-0 opacity-100"
-                          : "translate-x-1 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
-                      }`}
-                    >
+                      {/* Nomor di sisi kiri foto pertama, sejajar tepi atasnya.
+                          Disembunyikan di mobile (pindah ke header). */}
+                      <span
+                        className={`font-switzer text-[clamp(11px,0.9vw,14px)] leading-none text-flame/60 transition-opacity duration-500 max-lg:hidden lg:absolute lg:right-full lg:top-0 lg:mr-3 group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
+                          isActive ? "opacity-100" : "opacity-30"
+                        }`}
+                      >
+                        [{pad(index + 1)}]
+                      </span>
+
+                      <div className="flex items-end" style={{ gap: GAP }}>
+                        {images.map(({ ratio, src }, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            aria-haspopup="dialog"
+                            aria-label={`Buka detail ${project.title}`}
+                            onClick={(event) =>
+                              openProject(index, event.currentTarget)
+                            }
+                            style={
+                              {
+                                "--ar": String(ratio),
+                                flex: `${ratio} 1 0%`,
+                              } as CSSProperties
+                            }
+                            className={`block min-w-0 cursor-pointer overflow-hidden rounded-[2px] bg-flame/10 transition-opacity duration-300 ease-out [aspect-ratio:var(--ar)] max-lg:h-[clamp(120px,24svh,220px)] max-lg:[aspect-ratio:auto] max-sm:[&:nth-child(n+4)]:hidden group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:outline-none ${
+                              isActive ? "opacity-70" : "opacity-30"
+                            }`}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={src}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              draggable={false}
+                              className="h-full w-full select-none object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Penanda posisi, diam di tempat */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute right-[2vw] top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2 max-sm:hidden"
+      >
+        {SORTED_PROJECTS.map((project, i) => (
+          <span
+            key={project.slug}
+            className={`block w-px bg-flame transition-all duration-500 ${
+              i === active ? "h-8 opacity-100" : "h-3 opacity-30"
+            }`}
+          />
+        ))}
+      </div>
+
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-[clamp(16px,2vw,32px)] left-[4vw] z-10 font-switzer text-[clamp(11px,0.9vw,14px)] leading-none text-flame/60"
+      >
+        {pad(active + 1)} / {pad(TOTAL)}
+      </span>
+
+      {/* Sidebar detail proyek (detail final, tanpa halaman lanjutan),
+          dirender di body supaya berada di atas navbar dan tidak ikut
+          terpotong/ter-pin oleh section */}
+      {mounted &&
+        createPortal(
+          <>
+            <div
+              ref={scrimRef}
+              aria-hidden="true"
+              onClick={closeProject}
+              className="invisible fixed inset-0 z-[190] bg-black/60 opacity-0"
+            />
+            <aside
+              ref={panelRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="works-panel-title"
+              // Cegah smooth-scroll global (mis. Lenis) menelan scroll di sini.
+              data-lenis-prevent
+              onWheel={(event) => event.stopPropagation()}
+              onTouchMove={(event) => event.stopPropagation()}
+              style={{
+                overscrollBehavior: "contain",
+                WebkitOverflowScrolling: "touch",
+                scrollbarWidth: "thin",
+                scrollbarColor: "rgba(255,255,255,0.25) transparent",
+              }}
+              // shrink-0 pada semua anak: tanpa ini isi menyusut mengikuti
+              // tinggi layar dan panel tidak pernah bisa di-scroll.
+              className="invisible fixed left-0 top-0 z-[200] flex h-svh w-[min(520px,92vw)] flex-col gap-[clamp(18px,1.8vw,28px)] overflow-y-auto overflow-x-hidden border-r border-flame/20 bg-black p-[clamp(20px,2vw,32px)] pb-[clamp(40px,4vw,64px)] opacity-0 [&>*]:shrink-0"
+            >
+              <div
+                data-panel-item
+                className="flex items-center justify-between"
+              >
+                <span className="font-switzer text-[clamp(12px,1.1vw,17px)] capitalize leading-none tracking-[-0.01em] text-flame/60">
+                  {selectedProject?.category}
+                </span>
+                <button
+                  ref={closeRef}
+                  type="button"
+                  aria-label="Tutup detail proyek"
+                  onClick={closeProject}
+                  className="group -mr-2 flex h-10 w-10 items-center justify-center focus-visible:outline-none"
+                >
+                  <Plus className="h-5 w-5 rotate-45 bg-flame/70 transition-all duration-500 ease-out group-hover:rotate-[135deg] group-hover:bg-flame group-focus-visible:rotate-[135deg] group-focus-visible:bg-flame" />
+                </button>
+              </div>
+
+              {selectedProject && selectedImage && selected && (
+                <>
+                  {/* Foto utama + deretan thumbnail untuk berpindah foto */}
+                  <div data-panel-item className="flex flex-col gap-2">
+                    <div className="aspect-[16/10] w-full overflow-hidden bg-flame/10">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src="/icon-custom/Plus.svg"
-                        alt=""
-                        className="h-[clamp(11px,1.05vw,16px)] w-[clamp(11px,1.05vw,16px)] invert transition-transform duration-500 ease-out group-hover:rotate-180 group-focus-visible:rotate-180"
+                        key={`${selectedProject.slug}-${selected.image}`}
+                        src={selectedImage.src}
+                        alt={`${selectedProject.title} project preview`}
+                        decoding="async"
+                        draggable={false}
+                        className="h-full w-full select-none object-cover"
                       />
-                    </span>
-                  </button>
-                );
-              })}
-            </nav>
-        </article>
+                    </div>
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-svh">
-          {/*
-            Title (kiri): rata kiri, tiap kata di barisnya sendiri, italic,
-            dengan bintang di pojok kiri-atas dan kanan-bawah blok teks.
-            Semua title menumpuk di sel grid yang sama.
-          */}
-          <div
-            aria-live="polite"
-            className="absolute left-[4.2vw] z-20 grid w-[16vw]"
-            style={{ top: pinTop(TEXT_TOP) }}
-          >
-            {filteredProjects.map((project, index) => (
-              <h2
-                key={project.title}
-                aria-hidden={index !== activeProjectIndex}
-                aria-label={project.title}
-                className="works-project-title relative col-start-1 row-start-1 w-min justify-self-start font-acerok text-[clamp(16px,1.95vw,38px)] font-normal italic uppercase leading-[1.1] tracking-[0.01em] text-left"
-                style={{ color: INK }}
-              >
-                <span aria-hidden="true" className="block">
-                  {project.title.split(" ").map((word, wordIndex, words) => (
-                    <Fragment key={wordIndex}>
-                      <span className="inline-block whitespace-nowrap">
-                        {word.split("").map((char, charIndex) => (
-                          <span
-                            key={charIndex}
-                            className="works-title-char inline-block will-change-transform"
+                    {SLIDE_IMAGES[selected.project].length > 1 && (
+                      <div className="flex gap-2">
+                        {SLIDE_IMAGES[selected.project].map((image, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            aria-label={`Tampilkan foto ${i + 1} dari ${selectedProject.title}`}
+                            aria-pressed={i === selected.image}
+                            onClick={() => selectImage(i)}
+                            className={`aspect-[4/3] min-w-0 flex-1 cursor-pointer overflow-hidden bg-flame/10 outline-offset-2 transition-opacity duration-300 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-flame ${
+                              i === selected.image
+                                ? "opacity-100 outline outline-1 outline-flame"
+                                : "opacity-40"
+                            }`}
                           >
-                            {char}
-                          </span>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={image.src}
+                              alt=""
+                              loading="lazy"
+                              decoding="async"
+                              draggable={false}
+                              className="h-full w-full select-none object-cover"
+                            />
+                          </button>
                         ))}
-                      </span>
-                      {wordIndex < words.length - 1 ? " " : null}
-                    </Fragment>
-                  ))}
-                </span>
-                <Star />
-              </h2>
-            ))}
-          </div>
+                      </div>
+                    )}
+                  </div>
 
-          {/*
-            Deskripsi (kanan): rata kanan, italic, kolom sempit sehingga
-            terpecah jadi 3 baris pendek; bintang di pojok kanan-atas dan
-            kiri-bawah blok teks.
-          */}
-          <div
-            aria-live="polite"
-            className="absolute right-[2.9vw] z-20 grid w-[15.5vw]"
-            style={{ top: pinTop(TEXT_TOP) }}
-          >
-            {filteredProjects.map((project, index) => (
-              <p
-                key={project.title}
-                aria-hidden={index !== activeProjectIndex}
-                className="works-project-description relative col-start-1 row-start-1 justify-self-end font-switzer text-[clamp(11px,1.4vw,26px)] italic leading-[1.2] tracking-[-0.01em] text-right"
-                style={{ color: INK }}
-              >
-                <span className="block">
-                  {project.description
-                    .split(" ")
-                    .map((word, wordIndex, words) => (
-                      <Fragment key={wordIndex}>
-                        <span className="works-desc-word inline-block will-change-transform">
-                          {word}
-                        </span>
-                        {wordIndex < words.length - 1 ? " " : null}
-                      </Fragment>
-                    ))}
-                </span>
-                <Star />
-              </p>
-            ))}
-          </div>
+                  <h2
+                    id="works-panel-title"
+                    data-panel-item
+                    className="font-acerok text-[clamp(28px,3vw,44px)] font-normal uppercase leading-[1.05] tracking-normal text-flame"
+                  >
+                    {selectedProject.title}
+                  </h2>
 
-          <div
-            role="img"
-            aria-label={`Proyek ${activeProjectIndex + 1} dari ${filteredProjects.length}`}
-            className="absolute z-20 flex aspect-square w-[clamp(56px,5.4vw,104px)] -translate-x-1/2 -translate-y-1/2 items-center justify-center text-black"
-            style={{ left: "91.5%", top: pinTop(75.5) }}
-          >
-            <svg
-              viewBox="0 0 100 100"
-              aria-hidden="true"
-              className="absolute inset-0 h-full w-full -rotate-90"
-            >
-              <circle
-                cx="50"
-                cy="50"
-                r={RING_R}
-                fill="none"
-                stroke="currentColor"
-                strokeOpacity="0.25"
-                strokeWidth="1"
-              />
-              <circle
-                ref={ringRef}
-                cx="50"
-                cy="50"
-                r={RING_R}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeDasharray={RING_C}
-                strokeDashoffset={filteredProjects.length > 1 ? RING_C : 0}
-              />
-            </svg>
-            <span
-              aria-hidden="true"
-              className="relative font-acerok text-[clamp(14px,1.75vw,34px)] font-light leading-none"
-            >
-              {String(activeProjectIndex + 1).padStart(2, "0")}
-            </span>
-          </div>
-        </div>
-      </div>
+                  <p
+                    data-panel-item
+                    className="font-switzer text-[clamp(15px,1.2vw,18px)] leading-[1.3] tracking-[-0.01em] text-flame/70"
+                  >
+                    {selectedProject.description}
+                  </p>
 
-      <div
-        ref={cursorRef}
-        aria-hidden="true"
-        className="pointer-events-none fixed left-0 top-0 z-[70] hidden select-none will-change-transform [@media(pointer:fine)]:block"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={cursorIconRef}
-          src="/cursorFollowing.svg"
-          alt=""
-          className="h-[105px] w-[105px] select-none drop-shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
-        />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          ref={viewTextRef}
-          src="/view-text.png"
-          alt=""
-          className="absolute left-1/2 top-1/2 h-auto w-[54px] -translate-x-1/2 -translate-y-1/2 select-none"
-        />
-      </div>
+                  {/* Ringkasan panjang proyek (tampil kalau ada) */}
+                  {overviewParagraphs.length > 0 && (
+                    <section
+                      data-panel-item
+                      aria-labelledby="works-panel-overview"
+                      className="flex flex-col gap-3 border-t border-flame/20 pt-4"
+                    >
+                      <h3
+                        id="works-panel-overview"
+                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-flame/60"
+                      >
+                        Tentang proyek
+                      </h3>
+                      {overviewParagraphs.map((text, i) => (
+                        <p
+                          key={i}
+                          className="font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.4] tracking-[-0.01em] text-flame/70"
+                        >
+                          {text}
+                        </p>
+                      ))}
+                    </section>
+                  )}
+
+                  {/* Poin utama / hasil (tampil kalau ada) */}
+                  {highlights.length > 0 && (
+                    <section
+                      data-panel-item
+                      aria-labelledby="works-panel-highlights"
+                      className="flex flex-col gap-3 border-t border-flame/20 pt-4"
+                    >
+                      <h3
+                        id="works-panel-highlights"
+                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-flame/60"
+                      >
+                        Highlight
+                      </h3>
+                      <ul className="flex flex-col divide-y divide-flame/15 font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.35] text-flame/80">
+                        {highlights.map((item) => (
+                          <li key={item} className="py-2.5 first:pt-0 last:pb-0">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
+                  {/* Info singkat: kategori, tahun, peran, klien, durasi */}
+                  {meta.length > 0 && (
+                    <dl
+                      data-panel-item
+                      className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-flame/20 pt-4 font-switzer text-[clamp(13px,1vw,15px)] leading-[1.3]"
+                    >
+                      {meta.map((item) => (
+                        <div key={item.label} className="contents">
+                          <dt className="text-flame/50">{item.label}</dt>
+                          <dd className="text-flame">{String(item.value)}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+
+                  {/* Teknologi yang digunakan */}
+                  {technologies.length > 0 && (
+                    <section
+                      data-panel-item
+                      aria-labelledby="works-panel-tech"
+                      className="flex flex-col gap-3 border-t border-flame/20 pt-4"
+                    >
+                      <h3
+                        id="works-panel-tech"
+                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-flame/60"
+                      >
+                        {selectedProject.category === "website"
+                          ? "Teknologi"
+                          : "Tools"}
+                      </h3>
+                      <ul className="flex flex-wrap gap-2">
+                        {technologies.map((tech) => (
+                          <li
+                            key={tech}
+                            className="border border-flame/30 px-3 py-1.5 font-switzer text-[clamp(12px,0.95vw,14px)] leading-none text-flame"
+                          >
+                            {tech}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+
+                  {/* Galeri foto proyek */}
+                  {galleryImages.length > 0 && (
+                    <section
+                      data-panel-item
+                      aria-labelledby="works-panel-gallery"
+                      className="flex flex-col gap-3 border-t border-flame/20 pt-4"
+                    >
+                      <h3
+                        id="works-panel-gallery"
+                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-flame/60"
+                      >
+                        Galeri
+                      </h3>
+                      <div className="grid grid-cols-2 gap-2">
+                        {galleryImages.map(({ ratio, src }, i) => (
+                          <div
+                            key={`${selectedProject.slug}-g${i}`}
+                            style={{ aspectRatio: String(ratio) }}
+                            className={`overflow-hidden bg-flame/10 ${
+                              ratio > 1.5 ? "col-span-2" : ""
+                            }`}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={src}
+                              alt={`${selectedProject.title} foto ${i + 1}`}
+                              loading="lazy"
+                              decoding="async"
+                              draggable={false}
+                              className="h-full w-full select-none object-cover"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* Tautan proyek live (hanya kalau ada) */}
+                  {extra.url && (
+                    <a
+                      data-panel-item
+                      href={extra.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group flex items-center justify-between gap-4 border border-flame/40 px-5 py-4 font-acerok text-[clamp(13px,1.1vw,16px)] uppercase leading-none text-flame transition-colors duration-300 hover:bg-flame hover:text-black focus-visible:bg-flame focus-visible:text-black focus-visible:outline-none"
+                    >
+                      <span>Kunjungi proyek</span>
+                      <span aria-hidden="true">↗</span>
+                    </a>
+                  )}
+                </>
+              )}
+            </aside>
+          </>,
+          document.body
+        )}
     </section>
   );
 }

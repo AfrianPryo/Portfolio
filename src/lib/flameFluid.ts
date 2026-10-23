@@ -266,7 +266,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     curlF = createFBO(simW, simH, gl.NEAREST);
   };
 
-  const useProgram = (p: (typeof P)[string], texelW: number, texelH: number) => {
+  const bindProgram = (p: (typeof P)[string], texelW: number, texelH: number) => {
     gl.useProgram(p.p);
     gl.uniform2f(p.u("uTexel"), 1 / texelW, 1 / texelH);
   };
@@ -306,7 +306,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     const aspect = canvas.width / canvas.height;
     const radius = (cfg.splatRadius / 100) * (aspect > 1 ? aspect : 1);
 
-    useProgram(P.splat, simW, simH);
+    bindProgram(P.splat, simW, simH);
     gl.uniform1f(P.splat.u("uAspect"), aspect);
     gl.uniform2f(P.splat.u("uPoint"), x, y);
     gl.uniform1f(P.splat.u("uRadius"), radius);
@@ -315,7 +315,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     blit(velocity.write);
     velocity.swap();
 
-    useProgram(P.splat, dyeW, dyeH);
+    bindProgram(P.splat, dyeW, dyeH);
     bindTex(P.splat, "uTarget", dye.read.tex, 0);
     gl.uniform3f(P.splat.u("uColor"), amount, 0, 0);
     gl.uniform1f(P.splat.u("uRadius"), radius * 0.8);
@@ -325,12 +325,12 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
 
   const step = (dt: number) => {
     // curl
-    useProgram(P.curl, simW, simH);
+    bindProgram(P.curl, simW, simH);
     bindTex(P.curl, "uVelocity", velocity.read.tex, 0);
     blit(curlF);
 
     // vorticity + buoyancy
-    useProgram(P.vort, simW, simH);
+    bindProgram(P.vort, simW, simH);
     bindTex(P.vort, "uVelocity", velocity.read.tex, 0);
     bindTex(P.vort, "uCurl", curlF.tex, 1);
     bindTex(P.vort, "uDye", dye.read.tex, 2);
@@ -341,18 +341,18 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     velocity.swap();
 
     // divergence
-    useProgram(P.div, simW, simH);
+    bindProgram(P.div, simW, simH);
     bindTex(P.div, "uVelocity", velocity.read.tex, 0);
     blit(divergence);
 
     // pressure (warm start dengan decay)
-    useProgram(P.clear, simW, simH);
+    bindProgram(P.clear, simW, simH);
     bindTex(P.clear, "uTexture", pressure.read.tex, 0);
     gl.uniform1f(P.clear.u("uValue"), 0.8);
     blit(pressure.write);
     pressure.swap();
 
-    useProgram(P.press, simW, simH);
+    bindProgram(P.press, simW, simH);
     bindTex(P.press, "uDivergence", divergence.tex, 1);
     for (let i = 0; i < cfg.pressureIterations; i++) {
       bindTex(P.press, "uPressure", pressure.read.tex, 0);
@@ -361,14 +361,14 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     }
 
     // gradient subtract
-    useProgram(P.grad, simW, simH);
+    bindProgram(P.grad, simW, simH);
     bindTex(P.grad, "uPressure", pressure.read.tex, 0);
     bindTex(P.grad, "uVelocity", velocity.read.tex, 1);
     blit(velocity.write);
     velocity.swap();
 
     // advect velocity
-    useProgram(P.advect, simW, simH);
+    bindProgram(P.advect, simW, simH);
     gl.uniform2f(P.advect.u("uSimTexel"), 1 / simW, 1 / simH);
     bindTex(P.advect, "uVelocity", velocity.read.tex, 0);
     bindTex(P.advect, "uSource", velocity.read.tex, 1);
@@ -378,7 +378,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     velocity.swap();
 
     // advect dye
-    useProgram(P.advect, dyeW, dyeH);
+    bindProgram(P.advect, dyeW, dyeH);
     gl.uniform2f(P.advect.u("uSimTexel"), 1 / simW, 1 / simH);
     bindTex(P.advect, "uVelocity", velocity.read.tex, 0);
     bindTex(P.advect, "uSource", dye.read.tex, 1);
@@ -394,7 +394,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
-    useProgram(P.display, canvas.width, canvas.height);
+    bindProgram(P.display, canvas.width, canvas.height);
     bindTex(P.display, "uDye", dye.read.tex, 0);
     gl.uniform1f(P.display.u("uTime"), time);
     gl.uniform1f(P.display.u("uAspect"), canvas.width / canvas.height);
