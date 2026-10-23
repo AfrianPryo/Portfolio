@@ -11,7 +11,7 @@
 @theme inline {
   --font-display: 'Switzer', sans-serif;
   --font-switzer: 'Switzer', sans-serif;
-  --font-mono-ui: var(--font-azeret), ui-monospace, monospace;
+  --font-mono-ui: ui-monospace, monospace;
   --font-acerok: 'AcerokMages', serif;
   --color-ink: #141414;
   --color-flame: #ff0000;

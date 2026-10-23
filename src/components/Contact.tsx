@@ -51,6 +51,13 @@ export default function Contact() {
           duration: 18,
           ease: "none",
           repeat: -1,
+          paused: true,
+        });
+        ScrollTrigger.create({
+          trigger: root.current,
+          start: "top bottom",
+          end: "bottom top",
+          onToggle: (self) => (self.isActive ? spin.play() : spin.pause()),
         });
 
         const timeline = gsap.timeline({
@@ -534,6 +541,8 @@ export default function Contact() {
                 alt=""
                 width={1217}
                 height={431}
+                loading="lazy"
+                decoding="async"
                 draggable={false}
                 className="block h-auto w-full select-none will-change-transform"
               />
@@ -562,6 +571,8 @@ export default function Contact() {
                 data-contact-spin
                 src="/cursorFollowing.svg"
                 alt=""
+                loading="lazy"
+                decoding="async"
                 draggable={false}
                 className="h-full w-full select-none will-change-transform"
               />
@@ -603,6 +614,7 @@ export default function Contact() {
             alt=""
             width={800}
             height={870}
+            loading="lazy"
             decoding="async"
             draggable={false}
             className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover object-[85%_top] shadow-[0_20px_60px_rgba(0,0,0,0.6)]"

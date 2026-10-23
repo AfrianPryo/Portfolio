@@ -3,12 +3,16 @@
 import { useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
+import dynamic from "next/dynamic";
 import Navbar from "./Navbar";
 import CtaButton from "./CtaButton";
 import RunningHeadline from "./RunningHeadline";
 import SocialLinks from "./SocialLinks";
 import ResumeButton from "./ResumeButton";
-import OrnamentScene from "@/app/ornamentscene";
+
+const OrnamentScene = dynamic(() => import("@/app/ornamentscene"), {
+  ssr: false,
+});
 
 gsap.registerPlugin(useGSAP);
 
@@ -208,7 +212,7 @@ export default function Hero() {
       {/* Layer 2: Foto PNG siluet di tengah hero section — ukuran diperbesar */}
       <div
         data-parallax-person
-        className="pointer-events-none absolute bottom-0 left-1/2 z-[4] flex h-[min(94svh,1060px)] w-auto -translate-x-1/2 select-none items-end justify-center max-sm:h-[86svh]"
+        className="pointer-events-none absolute bottom-0 left-1/2 z-[4] flex h-[min(94svh,1060px)] w-auto -translate-x-1/2 select-none items-end justify-center max-sm:h-[100svh]"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -218,7 +222,7 @@ export default function Hero() {
           decoding="async"
           data-reveal
           data-person
-          className="h-full w-auto max-w-[98vw] -scale-x-100 object-contain object-bottom drop-shadow-[0_28px_70px_rgba(0,0,0,0.9)]"
+          className="h-full w-auto max-w-[98vw] max-sm:max-w-[110vw] -scale-x-100 object-contain object-bottom drop-shadow-[0_28px_70px_rgba(0,0,0,0.9)]"
         />
       </div>
 

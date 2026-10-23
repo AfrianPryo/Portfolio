@@ -88,6 +88,8 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const project = PROJECTS.find((item) => item.slug === slug);
 
   if (!project) notFound();
+  const preview = project.slides?.[0] ?? project.gallery?.[0];
+  if (!preview) notFound();
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-black px-[4vw] pb-16 pt-8 text-white max-sm:px-5 max-sm:pt-6">
@@ -158,7 +160,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
         {/* ===== Pratinjau ===== */}
         <div className="relative mt-20 aspect-[16/10] overflow-hidden bg-[#0a0303] max-sm:mt-14 md:mt-28">
           <Image
-            src={project.image}
+            src={preview.src}
             alt={`Pratinjau ${project.title}`}
             fill
             priority

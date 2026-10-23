@@ -3,10 +3,10 @@
 import ScrambleText from "./ScrambleText";
 
 const socials = [
-  { name: "Facebook", href: "https://facebook.com" },
+  { name: "Email", href: "mailto:annosulistyanno@gmail.com" },
   { name: "LinkedIn", href: "https://linkedin.com" },
-  { name: "Instagram", href: "https://instagram.com" },
-  { name: "GitHub", href: "https://github.com" },
+  { name: "Instagram", href: "https://www.instagram.com/__afffr/" },
+  { name: "GitHub", href: "https://github.com/AfrianPryo" },
 ];
 
 export default function SocialLinks() {
@@ -21,8 +21,8 @@ export default function SocialLinks() {
         <a
           key={social.name}
           href={social.href}
-          target="_blank"
-          rel="noopener noreferrer"
+          target={social.href.startsWith("mailto:") ? undefined : "_blank"}
+          rel={social.href.startsWith("mailto:") ? undefined : "noopener noreferrer"}
           className="group inline-flex items-center gap-1.5 transition-colors duration-300 hover:text-white focus-visible:text-white focus-visible:outline-none"
         >
           {/* Plus icon: awalnya terlihat berwarna putih, saat di-hover berputar dan berubah menjadi merah */}

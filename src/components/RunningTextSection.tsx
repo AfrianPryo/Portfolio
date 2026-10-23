@@ -38,6 +38,13 @@ export default function RunningTextSection() {
         let impulse = 0; // dorongan dari wheel (px/detik, bertanda)
         let scrollBoost = 0; // dorongan dari scrollY (px/detik, bertanda)
         let lastY = window.scrollY;
+        let half = el.scrollWidth / 2;
+        let tickerActive = false;
+
+        const resizeObserver = new ResizeObserver(() => {
+          half = el.scrollWidth / 2;
+        });
+        resizeObserver.observe(el);
 
         // Seperti RunningHeadline: baca wheel langsung. Scroll ke bawah -> makin cepat ke kiri,
         // scroll ke atas -> melambat / berbalik sebentar. Dihitung sebagai impuls, bukan selisih per frame,
@@ -45,13 +52,11 @@ export default function RunningTextSection() {
         const onWheel = (e: WheelEvent) => {
           impulse += e.deltaY * WHEEL_GAIN;
         };
-        window.addEventListener("wheel", onWheel, { passive: true });
 
         // Satu "grup" = setengah lebar track (ada 2 salinan identik → loop mulus).
         const tick = (_time: number, deltaMs: number) => {
           const dt = Math.min(Math.max(deltaMs, 1), 50) / 1000;
 
-          const half = el.scrollWidth / 2;
           if (!half) return;
 
           const base = half / BASE_DURATION;
@@ -76,10 +81,29 @@ export default function RunningTextSection() {
           el.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
         };
 
-        gsap.ticker.add(tick);
+        const visibilityObserver = new IntersectionObserver(([entry]) => {
+          if (entry.isIntersecting) {
+            lastY = window.scrollY;
+            if (!tickerActive) {
+              window.addEventListener("wheel", onWheel, { passive: true });
+              gsap.ticker.add(tick);
+              tickerActive = true;
+            }
+          } else if (tickerActive) {
+            window.removeEventListener("wheel", onWheel);
+            gsap.ticker.remove(tick);
+            tickerActive = false;
+            impulse = 0;
+            scrollBoost = 0;
+          }
+        });
+        if (root.current) visibilityObserver.observe(root.current);
+
         return () => {
-          gsap.ticker.remove(tick);
+          visibilityObserver.disconnect();
+          resizeObserver.disconnect();
           window.removeEventListener("wheel", onWheel);
+          gsap.ticker.remove(tick);
         };
       });
     },

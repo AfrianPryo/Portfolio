@@ -73,7 +73,11 @@ export default function RunningHeadline() {
       currentX += (targetX - currentX) * 0.055;
       text.style.transform = `translate3d(${currentX.toFixed(2)}px, 0, 0)`;
     };
-    gsap.ticker.add(tick);
+    const visibilityObserver = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) gsap.ticker.add(tick);
+      else gsap.ticker.remove(tick);
+    });
+    visibilityObserver.observe(container);
 
     // 4. Parallax kursor halus
     const mm = gsap.matchMedia();
@@ -94,6 +98,7 @@ export default function RunningHeadline() {
       window.removeEventListener("resize", updateBounds);
       window.removeEventListener("wheel", handleWheel);
       st.kill();
+      visibilityObserver.disconnect();
       gsap.ticker.remove(tick);
       mm.revert();
     };

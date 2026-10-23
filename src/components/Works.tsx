@@ -50,11 +50,24 @@ const FALLBACK_ROLE: Record<ProjectCategory, string> = {
   art: "Illustration",
 };
 
-// Teknologi cadangan per kategori, dipakai kalau proyek belum punya data.
-const FALLBACK_TECH: Record<ProjectCategory, string[]> = {
-  website: ["Next.js", "TypeScript", "Tailwind CSS", "GSAP"],
-  design: ["Figma", "Illustrator", "Photoshop"],
-  art: ["Procreate", "Photoshop", "Blender"],
+// Kontribusi cadangan per kategori, dipakai kalau proyek belum punya data.
+const FALLBACK_CONTRIBUTIONS: Record<ProjectCategory, string[]> = {
+  website: [
+    "Merancang UI/UX dan struktur halaman",
+    "Mengembangkan front-end yang responsif",
+    "Membuat animasi dan interaksi",
+    "Mengoptimalkan performa dan aksesibilitas",
+  ],
+  design: [
+    "Riset visual dan penyusunan moodboard",
+    "Mengembangkan konsep desain",
+    "Eksekusi visual dan finalisasi aset",
+  ],
+  art: [
+    "Mengembangkan konsep dan sketsa",
+    "Membuat ilustrasi utama",
+    "Pewarnaan dan finishing",
+  ],
 };
 
 // Pengacak berbenih: hasil acak selalu sama di server dan client, jadi tidak
@@ -92,7 +105,14 @@ const SLIDE_IMAGES: DummyImage[][] = (() => {
   const result: DummyImage[][] = [];
   let previous = "";
 
-  SORTED_PROJECTS.forEach((_, index) => {
+  SORTED_PROJECTS.forEach((project, index) => {
+    // Proyek dengan gambar asli: pakai langsung, tanpa gambar dummy.
+    if (project.slides && project.slides.length) {
+      result.push(project.slides);
+      previous = "";
+      return;
+    }
+
     let signature = "";
     let ratios: number[] = [];
     let attempt = 0;
@@ -133,12 +153,14 @@ const SLIDE_IMAGES: DummyImage[][] = (() => {
 // Pola rasio diputar per proyek supaya tiap galeri terasa berbeda.
 const GALLERY_RATIOS = [16 / 9, 4 / 5, 1, 3 / 2, 4 / 5, 16 / 9];
 
-const GALLERY_IMAGES: DummyImage[][] = SORTED_PROJECTS.map((_, index) =>
-  GALLERY_RATIOS.map((_, i) => {
+const GALLERY_IMAGES: DummyImage[][] = SORTED_PROJECTS.map((project, index) =>
+  project.gallery && project.gallery.length
+    ? project.gallery
+    : GALLERY_RATIOS.map((_, i) => {
     const ratio = GALLERY_RATIOS[(i + index) % GALLERY_RATIOS.length];
 
     return { ratio, src: dummyImage(100 + index * 7 + i, ratio) };
-  })
+      })
 );
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -203,11 +225,12 @@ export default function Works() {
 
   // Data tambahan proyek yang dipilih (dengan nilai cadangan).
   const extra: Partial<Project> = selectedProject ?? {};
-  const technologies =
-    extra.technologies && extra.technologies.length
-      ? extra.technologies
+  // Kontribusi saya di proyek ini (dengan nilai cadangan per kategori).
+  const contributions =
+    extra.contributions && extra.contributions.length
+      ? extra.contributions
       : selectedProject
-        ? FALLBACK_TECH[selectedProject.category] ?? []
+        ? FALLBACK_CONTRIBUTIONS[selectedProject.category] ?? []
         : [];
   const meta = [
     { label: "Tahun", value: extra.year },
@@ -224,7 +247,6 @@ export default function Works() {
     .split(/\n\s*\n/)
     .map((text) => text.trim())
     .filter(Boolean);
-  const highlights = extra.highlights ?? [];
   // Galeri: foto asli kalau ada, kalau tidak pakai foto dummy.
   const galleryImages: DummyImage[] = selected
     ? extra.images && extra.images.length
@@ -475,13 +497,13 @@ export default function Works() {
                     }`}
                   >
                     {/* Nomor versi mobile (versi desktop ada di sisi foto) */}
-                    <span className="font-switzer text-[12px] leading-none text-flame/60 lg:hidden">
+                    <span className="font-switzer text-[12px] leading-none text-white lg:hidden">
                       [{pad(index + 1)}]
                     </span>
-                    <h2 className="font-acerok text-[clamp(13px,1.1vw,18px)] font-normal uppercase leading-[1.1] text-flame max-lg:min-w-0 max-lg:text-[15px]">
+                    <h2 className="font-acerok text-[clamp(13px,1.1vw,18px)] font-normal uppercase leading-[1.1] text-white max-lg:min-w-0 max-lg:text-[15px]">
                       {project.title}
                     </h2>
-                    <span className="font-switzer text-[clamp(11px,0.9vw,14px)] capitalize leading-none tracking-[-0.01em] text-flame/60 max-lg:ml-auto max-lg:text-[12px]">
+                    <span className="font-switzer text-[clamp(11px,0.9vw,14px)] capitalize leading-none tracking-[-0.01em] text-white max-lg:ml-auto max-lg:text-[12px]">
                       {project.category}
                     </span>
                   </div>
@@ -502,7 +524,7 @@ export default function Works() {
                       {/* Nomor di sisi kiri foto pertama, sejajar tepi atasnya.
                           Disembunyikan di mobile (pindah ke header). */}
                       <span
-                        className={`font-switzer text-[clamp(11px,0.9vw,14px)] leading-none text-flame/60 transition-opacity duration-500 max-lg:hidden lg:absolute lg:right-full lg:top-0 lg:mr-3 group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
+                        className={`font-switzer text-[clamp(11px,0.9vw,14px)] leading-none text-white transition-opacity duration-500 max-lg:hidden lg:absolute lg:right-full lg:top-0 lg:mr-3 group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
                           isActive ? "opacity-100" : "opacity-30"
                         }`}
                       >
@@ -536,7 +558,7 @@ export default function Works() {
                               loading="lazy"
                               decoding="async"
                               draggable={false}
-                              className="h-full w-full select-none object-cover"
+                              className="h-full w-full select-none object-cover object-top"
                             />
                           </button>
                         ))}
@@ -565,13 +587,6 @@ export default function Works() {
         ))}
       </div>
 
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-[clamp(16px,2vw,32px)] left-[4vw] z-10 font-switzer text-[clamp(11px,0.9vw,14px)] leading-none text-flame/60"
-      >
-        {pad(active + 1)} / {pad(TOTAL)}
-      </span>
-
       {/* Sidebar detail proyek (detail final, tanpa halaman lanjutan),
           dirender di body supaya berada di atas navbar dan tidak ikut
           terpotong/ter-pin oleh section */}
@@ -598,16 +613,19 @@ export default function Works() {
                 WebkitOverflowScrolling: "touch",
                 scrollbarWidth: "thin",
                 scrollbarColor: "rgba(255,255,255,0.25) transparent",
+                // Efek blur pada background sidebar.
+                backdropFilter: "blur(24px) saturate(1.2)",
+                WebkitBackdropFilter: "blur(24px) saturate(1.2)",
               }}
               // shrink-0 pada semua anak: tanpa ini isi menyusut mengikuti
               // tinggi layar dan panel tidak pernah bisa di-scroll.
-              className="invisible fixed left-0 top-0 z-[200] flex h-svh w-[min(520px,92vw)] flex-col gap-[clamp(18px,1.8vw,28px)] overflow-y-auto overflow-x-hidden border-r border-flame/20 bg-black p-[clamp(20px,2vw,32px)] pb-[clamp(40px,4vw,64px)] opacity-0 [&>*]:shrink-0"
+              className="invisible fixed left-0 top-0 z-[200] flex h-svh w-[min(520px,92vw)] flex-col gap-[clamp(18px,1.8vw,28px)] overflow-y-auto overflow-x-hidden border-r border-flame/20 bg-black/50 p-[clamp(20px,2vw,32px)] pb-[clamp(40px,4vw,64px)] opacity-0 [&>*]:shrink-0"
             >
               <div
                 data-panel-item
                 className="flex items-center justify-between"
               >
-                <span className="font-switzer text-[clamp(12px,1.1vw,17px)] capitalize leading-none tracking-[-0.01em] text-flame/60">
+                <span className="font-switzer text-[clamp(12px,1.1vw,17px)] capitalize leading-none tracking-[-0.01em] text-white">
                   {selectedProject?.category}
                 </span>
                 <button
@@ -633,7 +651,7 @@ export default function Works() {
                         alt={`${selectedProject.title} project preview`}
                         decoding="async"
                         draggable={false}
-                        className="h-full w-full select-none object-cover"
+                        className="h-full w-full select-none object-cover object-top"
                       />
                     </div>
 
@@ -659,7 +677,7 @@ export default function Works() {
                               loading="lazy"
                               decoding="async"
                               draggable={false}
-                              className="h-full w-full select-none object-cover"
+                              className="h-full w-full select-none object-cover object-top"
                             />
                           </button>
                         ))}
@@ -670,14 +688,14 @@ export default function Works() {
                   <h2
                     id="works-panel-title"
                     data-panel-item
-                    className="font-acerok text-[clamp(28px,3vw,44px)] font-normal uppercase leading-[1.05] tracking-normal text-flame"
+                    className="font-acerok text-[clamp(28px,3vw,44px)] font-normal uppercase leading-[1.05] tracking-normal text-white"
                   >
                     {selectedProject.title}
                   </h2>
 
                   <p
                     data-panel-item
-                    className="font-switzer text-[clamp(15px,1.2vw,18px)] leading-[1.3] tracking-[-0.01em] text-flame/70"
+                    className="font-switzer text-[clamp(15px,1.2vw,18px)] leading-[1.3] tracking-[-0.01em] text-white"
                   >
                     {selectedProject.description}
                   </p>
@@ -691,41 +709,18 @@ export default function Works() {
                     >
                       <h3
                         id="works-panel-overview"
-                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-flame/60"
+                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
                       >
                         Tentang proyek
                       </h3>
                       {overviewParagraphs.map((text, i) => (
                         <p
                           key={i}
-                          className="font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.4] tracking-[-0.01em] text-flame/70"
+                          className="font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.4] tracking-[-0.01em] text-white"
                         >
                           {text}
                         </p>
                       ))}
-                    </section>
-                  )}
-
-                  {/* Poin utama / hasil (tampil kalau ada) */}
-                  {highlights.length > 0 && (
-                    <section
-                      data-panel-item
-                      aria-labelledby="works-panel-highlights"
-                      className="flex flex-col gap-3 border-t border-flame/20 pt-4"
-                    >
-                      <h3
-                        id="works-panel-highlights"
-                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-flame/60"
-                      >
-                        Highlight
-                      </h3>
-                      <ul className="flex flex-col divide-y divide-flame/15 font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.35] text-flame/80">
-                        {highlights.map((item) => (
-                          <li key={item} className="py-2.5 first:pt-0 last:pb-0">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
                     </section>
                   )}
 
@@ -737,35 +732,31 @@ export default function Works() {
                     >
                       {meta.map((item) => (
                         <div key={item.label} className="contents">
-                          <dt className="text-flame/50">{item.label}</dt>
-                          <dd className="text-flame">{String(item.value)}</dd>
+                          <dt className="text-white">{item.label}</dt>
+                          <dd className="text-white">{String(item.value)}</dd>
                         </div>
                       ))}
                     </dl>
                   )}
 
-                  {/* Teknologi yang digunakan */}
-                  {technologies.length > 0 && (
+                  {/* Kontribusi: apa yang dikerjakan di proyek ini */}
+                  {contributions.length > 0 && (
                     <section
                       data-panel-item
-                      aria-labelledby="works-panel-tech"
+                      aria-labelledby="works-panel-contribution"
                       className="flex flex-col gap-3 border-t border-flame/20 pt-4"
                     >
                       <h3
-                        id="works-panel-tech"
-                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-flame/60"
+                        id="works-panel-contribution"
+                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
                       >
-                        {selectedProject.category === "website"
-                          ? "Teknologi"
-                          : "Tools"}
+                        Kontribusi
                       </h3>
-                      <ul className="flex flex-wrap gap-2">
-                        {technologies.map((tech) => (
-                          <li
-                            key={tech}
-                            className="border border-flame/30 px-3 py-1.5 font-switzer text-[clamp(12px,0.95vw,14px)] leading-none text-flame"
-                          >
-                            {tech}
+                      <ul className="flex flex-col gap-2.5 font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.35] text-white">
+                        {contributions.map((item) => (
+                          <li key={item} className="flex items-start gap-3">
+                            <Plus className="mt-[0.3em] h-3 w-3 shrink-0 bg-flame/70" />
+                            <span>{item}</span>
                           </li>
                         ))}
                       </ul>
@@ -781,7 +772,7 @@ export default function Works() {
                     >
                       <h3
                         id="works-panel-gallery"
-                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-flame/60"
+                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
                       >
                         Galeri
                       </h3>
@@ -801,7 +792,7 @@ export default function Works() {
                               loading="lazy"
                               decoding="async"
                               draggable={false}
-                              className="h-full w-full select-none object-cover"
+                              className="h-full w-full select-none object-cover object-top"
                             />
                           </div>
                         ))}
@@ -816,7 +807,7 @@ export default function Works() {
                       href={extra.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="group flex items-center justify-between gap-4 border border-flame/40 px-5 py-4 font-acerok text-[clamp(13px,1.1vw,16px)] uppercase leading-none text-flame transition-colors duration-300 hover:bg-flame hover:text-black focus-visible:bg-flame focus-visible:text-black focus-visible:outline-none"
+                      className="group flex items-center justify-between gap-4 border border-flame/40 px-5 py-4 font-acerok text-[clamp(13px,1.1vw,16px)] uppercase leading-none text-white transition-colors duration-300 hover:bg-flame hover:text-black focus-visible:bg-flame focus-visible:text-black focus-visible:outline-none"
                     >
                       <span>Kunjungi proyek</span>
                       <span aria-hidden="true">↗</span>

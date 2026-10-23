@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createFlameFluid } from "@/lib/flameFluid";
 
 /**
  * Overlay liquify api merah yang mengikuti kursor.
@@ -18,11 +17,26 @@ export default function FlameCursor() {
     const mq = window.matchMedia(
       "(pointer: fine) and (prefers-reduced-motion: no-preference)"
     );
-    let fluid: ReturnType<typeof createFlameFluid> = null;
+    let fluid: ReturnType<
+      typeof import("@/lib/flameFluid").createFlameFluid
+    > = null;
+    let loading = false;
+    let initialized = false;
+    let disposed = false;
 
-    const start = () => {
-      if (fluid || !mq.matches) return;
-      fluid = createFlameFluid(canvas);
+    const start = async () => {
+      if (fluid || loading || initialized || disposed || !mq.matches) return;
+
+      loading = true;
+      initialized = true;
+      try {
+        const { createFlameFluid } = await import("@/lib/flameFluid");
+        if (!disposed && mq.matches) fluid = createFlameFluid(canvas);
+      } catch (error) {
+        console.error("[FlameCursor] Gagal memuat simulasi fluida.", error);
+      } finally {
+        loading = false;
+      }
     };
     const stop = () => {
       fluid?.dispose();
@@ -31,14 +45,20 @@ export default function FlameCursor() {
     const handlePointerMove = (e: PointerEvent) => {
       const isOverWorks = Boolean((e.target as Element | null)?.closest("#works"));
       canvas.style.opacity = isOverWorks ? "0" : "1";
+      if (mq.matches) void start();
     };
-    const onChange = () => (mq.matches ? start() : stop());
+    const onChange = () => {
+      if (!mq.matches) {
+        stop();
+        initialized = false;
+      }
+    };
 
-    start();
     mq.addEventListener("change", onChange);
     window.addEventListener("pointermove", handlePointerMove, { passive: true });
 
     return () => {
+      disposed = true;
       mq.removeEventListener("change", onChange);
       window.removeEventListener("pointermove", handlePointerMove);
       stop();

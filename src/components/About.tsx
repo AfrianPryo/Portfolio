@@ -160,6 +160,8 @@ export default function About() {
             alt=""
             width={1024}
             height={625}
+            loading="lazy"
+            decoding="async"
             className="h-auto w-full object-contain opacity-100 brightness-125 contrast-125 drop-shadow-[0_0_70px_rgba(255,34,0,0.25)]"
           />
         </div>
