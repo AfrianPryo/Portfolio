@@ -4,8 +4,57 @@ import SmoothScroll from "@/components/SmoothScroll";
 import FlameCursor from "@/components/FlameCursor";
 
 export const metadata: Metadata = {
-  title: "Afrian — Ideas into reality",
-  description: "Portfolio Afrian, maker of things world wide.",
+  metadataBase: new URL("https://afrianpryo.vercel.app"),
+  title: {
+    default: "Afrian Pryo Sulistyanno — UI/UX Designer & Web Developer",
+    template: "%s | Afrian Pryo Sulistyanno",
+  },
+  description:
+    "Portofolio Afrian Pryo Sulistyanno, UI/UX Designer dan Web Developer dari Jepara. Lihat karya desain, aplikasi web, pengalaman, dan resume.",
+  applicationName: "Portofolio Afrian",
+  authors: [{ name: "Afrian Pryo Sulistyanno" }],
+  creator: "Afrian Pryo Sulistyanno",
+  publisher: "Afrian Pryo Sulistyanno",
+  keywords: [
+    "Afrian Pryo Sulistyanno",
+    "Afrian Pryo",
+    "UI/UX Designer Jepara",
+    "Web Developer Jepara",
+    "Portofolio UI/UX",
+    "Portofolio Web Developer",
+    "Laravel Developer",
+    "React Developer",
+  ],
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    locale: "id_ID",
+    url: "/",
+    siteName: "Portofolio Afrian",
+    title: "Afrian Pryo Sulistyanno — UI/UX Designer & Web Developer",
+    description:
+      "Portofolio Afrian Pryo Sulistyanno. Jelajahi karya UI/UX, aplikasi web, pengalaman, dan resume.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Afrian Pryo Sulistyanno — UI/UX Designer & Web Developer",
+    description:
+      "Portofolio Afrian Pryo Sulistyanno. Jelajahi karya UI/UX, aplikasi web, pengalaman, dan resume.",
+    images: ["/opengraph-image"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
   icons: {
     icon: [
       {

@@ -33,6 +33,33 @@ export async function generateMetadata({
   return {
     title: `${project.title} — Afrian`,
     description: project.description,
+    alternates: {
+      canonical: `/works/${project.slug}`,
+    },
+    openGraph: {
+      type: "website",
+      url: `/works/${project.slug}`,
+      title: `${project.title} — Portofolio Afrian`,
+      description: project.description,
+      ...(project.slides?.[0]
+        ? {
+            images: [
+              {
+                url: project.slides[0].src,
+                alt: `Pratinjau proyek ${project.title}`,
+              },
+            ],
+          }
+        : {}),
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${project.title} — Portofolio Afrian`,
+      description: project.description,
+      ...(project.slides?.[0]
+        ? { images: [project.slides[0].src] }
+        : {}),
+    },
   };
 }
 

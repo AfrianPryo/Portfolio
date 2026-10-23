@@ -4,9 +4,19 @@ import CtaButton from "@/components/CtaButton";
 import ResumeMotion from "@/components/ResumeMotion";
 
 export const metadata: Metadata = {
-  title: "Resume — Afrian",
+  title: "Resume dan Profil",
   description:
-    "Resume Afrian Pryo Sulistyanno — Graphic Designer & Junior Developer.",
+    "Resume Afrian Pryo Sulistyanno, UI/UX Designer dan Junior Fullstack Developer. Lihat pengalaman, pendidikan, keterampilan, dan profil lengkap.",
+  alternates: {
+    canonical: "/resume",
+  },
+  openGraph: {
+    title: "Resume dan Profil Afrian Pryo Sulistyanno",
+    description:
+      "Pengalaman, pendidikan, keterampilan, dan profil Afrian Pryo Sulistyanno sebagai UI/UX Designer dan Junior Fullstack Developer.",
+    url: "/resume",
+    type: "profile",
+  },
 };
 
 const EMAIL = "annosulistyanno@gmail.com";

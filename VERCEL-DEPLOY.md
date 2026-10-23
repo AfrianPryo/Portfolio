@@ -82,8 +82,11 @@ Jika ada yang gagal, buka deployment di Vercel → **Build Logs** atau **Runtime
 3. Ikuti record DNS yang ditampilkan Vercel. Hindari menebak record; nilai yang benar dapat berbeda menurut domain dan konfigurasi akun.
 4. Tunggu status domain menjadi valid dan sertifikat HTTPS aktif.
 5. Buka domain production dan ulangi smoke test minimal untuk beranda, satu route proyek, serta `/resume.pdf`.
+6. Setelah situs production dapat diakses publik, tambahkan properti domain di [Google Search Console](https://search.google.com/search-console), verifikasi kepemilikan domain mengikuti metode yang tersedia, lalu kirim `https://afrianpryo.vercel.app/sitemap.xml`. Gunakan URL Inspection untuk meminta crawl beranda. Verifikasi tambahan di Search Console mungkin membutuhkan record DNS atau tag yang disediakan Google; masukkan hanya nilai yang diberikan akun milik Anda.
 
 Push berikutnya ke branch production akan memicu deployment baru. Pull request/branch lain biasanya menghasilkan Preview Deployment sehingga perubahan dapat ditinjau sebelum dirilis.
+
+Pengiriman sitemap dan permintaan crawl membantu mesin pencari menemukan halaman, tetapi tidak menjamin kapan atau apakah halaman akan muncul di hasil pencarian. Pastikan deployment production tidak memakai perlindungan sandi dan halaman tidak mengirim `noindex`.
 
 ## 6. Rollback
 
