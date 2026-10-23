@@ -54,9 +54,9 @@ export const PROJECTS: Project[] = [
       "Deploy ke domain sekolah",
     ],
     slides: [
+      img("usman", "mockup-usman.webp", 1.352),
       img("usman", "landing-usman.webp", 0.8),
       img("usman", "dashboard-usman.webp", 0.85),
-      img("usman", "dashboard-unit-usman.webp", 1.04),
     ],
     gallery: [
       img("usman", "mockup-usman.webp", 1.352),
