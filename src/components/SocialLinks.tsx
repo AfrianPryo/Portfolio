@@ -4,7 +4,7 @@ import ScrambleText from "./ScrambleText";
 
 const socials = [
   { name: "Email", href: "mailto:annosulistyanno@gmail.com" },
-  { name: "LinkedIn", href: "https://linkedin.com" },
+  // { name: "LinkedIn", href: "https://linkedin.com" },
   { name: "Instagram", href: "https://www.instagram.com/__afffr/" },
   { name: "GitHub", href: "https://github.com/AfrianPryo" },
 ];

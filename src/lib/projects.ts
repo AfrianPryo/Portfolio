@@ -41,7 +41,7 @@ export const PROJECTS: Project[] = [
       "Sistem manajemen Usaha Mandiri SMKN 1 Bangsri: transaksi, inventaris, aset, dan laporan seluruh unit usaha sekolah dalam satu dashboard.",
     overview:
       "USMAN (Usaha Mandiri) adalah aplikasi web untuk mengelola unit-unit usaha milik sekolah, seperti Alfamart, Bengkel, Fotokopi, TEFA, dan Teh Siswa. Sebelumnya pencatatan tersebar di buku dan berkas terpisah, sehingga rekap pendapatan, pengeluaran, dan laba sulit dipantau.\n\nDi USMAN, admin master dapat melihat statistik seluruh unit usaha, sementara tiap unit mencatat transaksinya sendiri. Surat dan laporan resmi dibuat otomatis dari template ber-KOP, lengkap dengan tanda tangan dan nomor surat.",
-    year: 2025,
+    year: 2026,
     role: "Design & Development",
     client: "SMKN 1 Bangsri",
     contributions: [
@@ -59,6 +59,7 @@ export const PROJECTS: Project[] = [
       img("usman", "dashboard-unit-usman.webp", 1.04),
     ],
     gallery: [
+      img("usman", "mockup-usman.webp", 1.352),
       img("usman", "landing-usman.webp", 0.8),
       img("usman", "login-usman.webp", 2.222),
       img("usman", "dashboard-usman.webp", 0.85),
@@ -79,7 +80,7 @@ export const PROJECTS: Project[] = [
       "Toko online perlengkapan komputer dengan katalog produk, pembayaran, event promo, dan panel admin lengkap.",
     overview:
       "Compify adalah website toko perlengkapan komputer: motherboard, RAM, monitor, keyboard, dan peripheral lain. Pengunjung bisa menjelajah kategori, melihat produk terlaris dan terbaru, lalu membayar lewat metode pembayaran yang tersedia.\n\nDi sisi admin, tersedia dashboard untuk mengelola produk, kategori, event promo, metode pembayaran, dan melihat analitik penjualan.",
-    year: 2026,
+    year: 2025,
     role: "Design & Development",
     client: "Proyek pribadi",
     contributions: [

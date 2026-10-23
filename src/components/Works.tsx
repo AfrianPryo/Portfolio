@@ -1,7 +1,10 @@
 "use client";
 
 import {
+  memo,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -87,8 +90,10 @@ function mulberry32(seed: number) {
 }
 
 // Gambar dummy berupa SVG gradien (data URI), diganti gambar asli nanti.
+// Lebar 640 sudah cukup untuk tinggi baris maksimum; lebih kecil = decode
+// lebih cepat dan memori lebih hemat.
 function dummyImage(seed: number, ratio: number) {
-  const w = 800;
+  const w = 640;
   const h = Math.round(w / ratio);
   const [a, b] = PALETTE[seed % PALETTE.length];
   const cx = 20 + ((seed * 37) % 60);
@@ -149,25 +154,48 @@ const SLIDE_IMAGES: DummyImage[][] = (() => {
   return result;
 })();
 
+// Total rasio dan lebar celah per proyek dihitung sekali saja.
+const ROW_METRICS = SLIDE_IMAGES.map((images) => ({
+  ratioSum: images.reduce((sum, image) => sum + image.ratio, 0),
+  gaps: (images.length - 1) * GAP,
+}));
+
 // Foto tambahan untuk galeri di sidebar (di luar foto pada baris section).
 // Pola rasio diputar per proyek supaya tiap galeri terasa berbeda.
+// Dibuat malas (saat proyek dibuka) dan di-cache, supaya tidak membebani
+// saat modul dimuat.
 const GALLERY_RATIOS = [16 / 9, 4 / 5, 1, 3 / 2, 4 / 5, 16 / 9];
 
-const GALLERY_IMAGES: DummyImage[][] = SORTED_PROJECTS.map((project, index) =>
-  project.gallery && project.gallery.length
-    ? project.gallery
-    : GALLERY_RATIOS.map((_, i) => {
-    const ratio = GALLERY_RATIOS[(i + index) % GALLERY_RATIOS.length];
+const galleryCache = new Map<number, DummyImage[]>();
 
-    return { ratio, src: dummyImage(100 + index * 7 + i, ratio) };
-      })
-);
+function getGalleryImages(index: number): DummyImage[] {
+  const cached = galleryCache.get(index);
+
+  if (cached) return cached;
+
+  const project = SORTED_PROJECTS[index];
+  const images: DummyImage[] =
+    project.gallery && project.gallery.length
+      ? project.gallery
+      : GALLERY_RATIOS.map((_, i) => {
+          const ratio = GALLERY_RATIOS[(i + index) % GALLERY_RATIOS.length];
+
+          return { ratio, src: dummyImage(100 + index * 7 + i, ratio) };
+        });
+
+  galleryCache.set(index, images);
+
+  return images;
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
 // Pudar di tepi atas/bawah supaya baris yang keluar masuk terasa halus.
-const FADE_MASK =
-  "linear-gradient(to bottom, transparent 0%, #000 18%, #000 82%, transparent 100%)";
+// Dibuat dengan overlay gradien statis (bukan mask-image pada kontainer yang
+// isinya bergerak), karena mask memaksa browser menggambar ulang seluruh
+// komposisi di setiap frame scroll. Hasil visualnya sama karena latar hitam.
+const FADE_TOP = "linear-gradient(to bottom, #000 0%, rgba(0,0,0,0) 100%)";
+const FADE_BOTTOM = "linear-gradient(to top, #000 0%, rgba(0,0,0,0) 100%)";
 
 const FOCUSABLE = "a[href], button:not([disabled])";
 const subscribeToMount = () => () => {};
@@ -197,6 +225,111 @@ function Plus({ className = "" }: { className?: string }) {
   );
 }
 
+// Satu baris proyek. Dibungkus memo: saat baris aktif berganti saat scroll,
+// hanya dua baris (yang lama dan yang baru) yang dirender ulang, bukan
+// seluruh daftar beserta semua gambarnya.
+const ProjectRow = memo(function ProjectRow({
+  project,
+  index,
+  images,
+  ratioSum,
+  gaps,
+  isActive,
+  onOpen,
+}: {
+  project: Project;
+  index: number;
+  images: DummyImage[];
+  ratioSum: number;
+  gaps: number;
+  isActive: boolean;
+  onOpen: (project: number, trigger: HTMLElement) => void;
+}) {
+  return (
+    <article
+      data-slide
+      className="group/project relative flex w-full items-center px-[4vw] py-[clamp(6px,0.8vw,12px)] max-lg:py-5"
+    >
+      <div className="mx-auto flex w-full max-w-[1500px] items-start gap-[clamp(48px,5vw,80px)] max-lg:flex-col max-lg:items-start max-lg:gap-3">
+        {/* Kiri: title proyek kecil.
+            Mobile/tablet: satu baris header → [nomor] JUDUL ... kategori */}
+        <div
+          className={`flex shrink-0 flex-col gap-2 transition-opacity duration-500 max-lg:w-full max-lg:flex-row max-lg:items-baseline max-lg:gap-3 lg:w-[clamp(120px,14vw,220px)] group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
+            isActive ? "opacity-100" : "opacity-30"
+          }`}
+        >
+          {/* Nomor versi mobile (versi desktop ada di sisi foto) */}
+          <span className="font-switzer text-[12px] leading-none text-white lg:hidden">
+            [{pad(index + 1)}]
+          </span>
+          <h2 className="font-acerok text-[clamp(13px,1.1vw,18px)] font-normal uppercase leading-[1.1] text-white max-lg:min-w-0 max-lg:text-[15px]">
+            {project.title}
+          </h2>
+          <span className="font-switzer text-[clamp(11px,0.9vw,14px)] capitalize leading-none tracking-[-0.01em] text-white max-lg:ml-auto max-lg:text-[12px]">
+            {project.category}
+          </span>
+        </div>
+
+        {/* Kanan: gambar rata kanan. Semua proyek memakai tinggi
+            baris yang sama; lebar tiap gambar mengikuti rasionya.
+            Mobile/tablet: baris penuh selebar layar dengan tinggi
+            seragam (gambar di-crop), maksimal 3 foto di < 640px. */}
+        <div className="flex min-w-0 flex-1 justify-end max-lg:w-full">
+          <div
+            className="relative flex w-[var(--row-w)] max-w-full flex-col gap-2 [--row-h:clamp(110px,min(34svh,22vw),380px)] max-lg:w-full lg:gap-0"
+            style={
+              {
+                "--row-w": `calc(var(--row-h) * ${ratioSum.toFixed(3)} + ${gaps}px)`,
+              } as CSSProperties
+            }
+          >
+            {/* Nomor di sisi kiri foto pertama, sejajar tepi atasnya.
+                Disembunyikan di mobile (pindah ke header). */}
+            <span
+              className={`font-switzer text-[clamp(11px,0.9vw,14px)] leading-none text-white transition-opacity duration-500 max-lg:hidden lg:absolute lg:right-full lg:top-0 lg:mr-3 group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
+                isActive ? "opacity-100" : "opacity-30"
+              }`}
+            >
+              [{pad(index + 1)}]
+            </span>
+
+            <div className="flex items-end" style={{ gap: GAP }}>
+              {images.map(({ ratio, src }, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-label={`Buka detail ${project.title}`}
+                  onClick={(event) => onOpen(index, event.currentTarget)}
+                  style={
+                    {
+                      "--ar": String(ratio),
+                      flex: `${ratio} 1 0%`,
+                    } as CSSProperties
+                  }
+                  className={`block min-w-0 cursor-pointer overflow-hidden rounded-[2px] bg-flame/10 transition-opacity duration-300 ease-out [aspect-ratio:var(--ar)] max-lg:h-[clamp(120px,24svh,220px)] max-lg:[aspect-ratio:auto] max-sm:[&:nth-child(n+4)]:hidden group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:outline-none ${
+                    isActive ? "opacity-70" : "opacity-30"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
+                    className="h-full w-full select-none object-cover object-top"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+});
+
 export default function Works() {
   const rootRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -205,6 +338,7 @@ export default function Works() {
   const closeRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const panelReadyRef = useRef(false);
+  const activeRef = useRef(0);
 
   const [active, setActive] = useState(0);
   const mounted = useSyncExternalStore(
@@ -218,7 +352,9 @@ export default function Works() {
     image: number;
   } | null>(null);
 
-  const selectedProject = selected ? SORTED_PROJECTS[selected.project] : null;
+  const selectedIndex = selected?.project ?? null;
+  const selectedProject =
+    selectedIndex !== null ? SORTED_PROJECTS[selectedIndex] : null;
   const selectedImage = selected
     ? SLIDE_IMAGES[selected.project][selected.image]
     : null;
@@ -247,20 +383,28 @@ export default function Works() {
     .split(/\n\s*\n/)
     .map((text) => text.trim())
     .filter(Boolean);
+
   // Galeri: foto asli kalau ada, kalau tidak pakai foto dummy.
-  const galleryImages: DummyImage[] = selected
-    ? extra.images && extra.images.length
-      ? extra.images.map((src) => ({ ratio: 4 / 3, src }))
-      : GALLERY_IMAGES[selected.project]
-    : [];
+  // Di-memo per proyek supaya tidak dibuat ulang di setiap render sidebar.
+  const galleryImages: DummyImage[] = useMemo(() => {
+    if (selectedIndex === null) return [];
+
+    const project = SORTED_PROJECTS[selectedIndex];
+
+    return project.images && project.images.length
+      ? project.images.map((src) => ({ ratio: 4 / 3, src }))
+      : getGalleryImages(selectedIndex);
+  }, [selectedIndex]);
 
   // Satu proyek = satu kesatuan: foto mana pun yang diklik, sidebar selalu
   // terbuka dengan isi yang sama (mulai dari foto pertama).
-  const openProject = (project: number, trigger: HTMLElement) => {
+  // useCallback supaya identitas fungsi stabil dan ProjectRow tidak
+  // dirender ulang tanpa perlu.
+  const openProject = useCallback((project: number, trigger: HTMLElement) => {
     triggerRef.current = trigger;
     setSelected({ project, image: 0 });
     setOpen(true);
-  };
+  }, []);
 
   const closeProject = () => setOpen(false);
 
@@ -434,21 +578,40 @@ export default function Works() {
             // supaya jarak pin sudah masuk saat posisi mereka dihitung.
             refreshPriority: 1,
             onUpdate: (self) => {
-              setActive(
-                Math.round(self.progress * Math.max(0, TOTAL - 1))
+              const next = Math.round(
+                self.progress * Math.max(0, TOTAL - 1)
               );
+
+              // Hanya update state kalau baris aktif benar-benar berganti,
+              // bukan di setiap frame scroll.
+              if (next !== activeRef.current) {
+                activeRef.current = next;
+                setActive(next);
+              }
             },
           },
         }
       );
 
       // Gambar dan font bisa menggeser layout; hitung ulang posisi trigger.
-      const refresh = () => ScrollTrigger.refresh();
+      // Beberapa pemicu (load, fonts.ready) digabung jadi satu refresh supaya
+      // tidak menghitung ulang seluruh halaman berkali-kali.
+      let pending: gsap.core.Tween | null = null;
+      let cancelled = false;
+      const refresh = () => {
+        if (cancelled) return;
+        pending?.kill();
+        pending = gsap.delayedCall(0.15, () => ScrollTrigger.refresh());
+      };
 
       window.addEventListener("load", refresh);
       document.fonts?.ready.then(refresh);
 
-      return () => window.removeEventListener("load", refresh);
+      return () => {
+        cancelled = true;
+        pending?.kill();
+        window.removeEventListener("load", refresh);
+      };
     },
     { scope: rootRef }
   );
@@ -468,109 +631,35 @@ export default function Works() {
         style={{
           clipPath: "inset(0)",
           contain: "paint",
-          WebkitMaskImage: FADE_MASK,
-          maskImage: FADE_MASK,
         }}
       >
         <div ref={listRef} className="will-change-transform">
-          {SORTED_PROJECTS.map((project, index) => {
-            const isActive = index === active;
-            const images = SLIDE_IMAGES[index];
-            const ratioSum = images.reduce(
-              (sum, image) => sum + image.ratio,
-              0
-            );
-            const gaps = (images.length - 1) * GAP;
-
-            return (
-              <article
-                key={project.slug}
-                data-slide
-                className="group/project relative flex w-full items-center px-[4vw] py-[clamp(6px,0.8vw,12px)] max-lg:py-5"
-              >
-                <div className="mx-auto flex w-full max-w-[1500px] items-start gap-[clamp(48px,5vw,80px)] max-lg:flex-col max-lg:items-start max-lg:gap-3">
-                  {/* Kiri: title proyek kecil.
-                      Mobile/tablet: satu baris header → [nomor] JUDUL ... kategori */}
-                  <div
-                    className={`flex shrink-0 flex-col gap-2 transition-opacity duration-500 max-lg:w-full max-lg:flex-row max-lg:items-baseline max-lg:gap-3 lg:w-[clamp(120px,14vw,220px)] group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
-                      isActive ? "opacity-100" : "opacity-30"
-                    }`}
-                  >
-                    {/* Nomor versi mobile (versi desktop ada di sisi foto) */}
-                    <span className="font-switzer text-[12px] leading-none text-white lg:hidden">
-                      [{pad(index + 1)}]
-                    </span>
-                    <h2 className="font-acerok text-[clamp(13px,1.1vw,18px)] font-normal uppercase leading-[1.1] text-white max-lg:min-w-0 max-lg:text-[15px]">
-                      {project.title}
-                    </h2>
-                    <span className="font-switzer text-[clamp(11px,0.9vw,14px)] capitalize leading-none tracking-[-0.01em] text-white max-lg:ml-auto max-lg:text-[12px]">
-                      {project.category}
-                    </span>
-                  </div>
-
-                  {/* Kanan: gambar rata kanan. Semua proyek memakai tinggi
-                      baris yang sama; lebar tiap gambar mengikuti rasionya.
-                      Mobile/tablet: baris penuh selebar layar dengan tinggi
-                      seragam (gambar di-crop), maksimal 3 foto di < 640px. */}
-                  <div className="flex min-w-0 flex-1 justify-end max-lg:w-full">
-                    <div
-                      className="relative flex w-[var(--row-w)] max-w-full flex-col gap-2 [--row-h:clamp(110px,min(34svh,22vw),380px)] max-lg:w-full lg:gap-0"
-                      style={
-                        {
-                          "--row-w": `calc(var(--row-h) * ${ratioSum.toFixed(3)} + ${gaps}px)`,
-                        } as CSSProperties
-                      }
-                    >
-                      {/* Nomor di sisi kiri foto pertama, sejajar tepi atasnya.
-                          Disembunyikan di mobile (pindah ke header). */}
-                      <span
-                        className={`font-switzer text-[clamp(11px,0.9vw,14px)] leading-none text-white transition-opacity duration-500 max-lg:hidden lg:absolute lg:right-full lg:top-0 lg:mr-3 group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
-                          isActive ? "opacity-100" : "opacity-30"
-                        }`}
-                      >
-                        [{pad(index + 1)}]
-                      </span>
-
-                      <div className="flex items-end" style={{ gap: GAP }}>
-                        {images.map(({ ratio, src }, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            aria-haspopup="dialog"
-                            aria-label={`Buka detail ${project.title}`}
-                            onClick={(event) =>
-                              openProject(index, event.currentTarget)
-                            }
-                            style={
-                              {
-                                "--ar": String(ratio),
-                                flex: `${ratio} 1 0%`,
-                              } as CSSProperties
-                            }
-                            className={`block min-w-0 cursor-pointer overflow-hidden rounded-[2px] bg-flame/10 transition-opacity duration-300 ease-out [aspect-ratio:var(--ar)] max-lg:h-[clamp(120px,24svh,220px)] max-lg:[aspect-ratio:auto] max-sm:[&:nth-child(n+4)]:hidden group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:outline-none ${
-                              isActive ? "opacity-70" : "opacity-30"
-                            }`}
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={src}
-                              alt=""
-                              loading="lazy"
-                              decoding="async"
-                              draggable={false}
-                              className="h-full w-full select-none object-cover object-top"
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
+          {SORTED_PROJECTS.map((project, index) => (
+            <ProjectRow
+              key={project.slug}
+              project={project}
+              index={index}
+              images={SLIDE_IMAGES[index]}
+              ratioSum={ROW_METRICS[index].ratioSum}
+              gaps={ROW_METRICS[index].gaps}
+              isActive={index === active}
+              onOpen={openProject}
+            />
+          ))}
         </div>
       </div>
+
+      {/* Pudar tepi atas/bawah (overlay statis, pengganti mask-image) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 z-[5] h-[18%]"
+        style={{ backgroundImage: FADE_TOP }}
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-[18%]"
+        style={{ backgroundImage: FADE_BOTTOM }}
+      />
 
       {/* Penanda posisi, diam di tempat */}
       <div
