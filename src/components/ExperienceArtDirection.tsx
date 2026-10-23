@@ -48,9 +48,9 @@ const highlights = [
     lines: [
       "Game Development. Belajar",
       "membuat game sederhana",
-      "sebagai proyek individu,",
-      "sambil mengenal dunia",
-      "game dari jurusan.",
+      "pada seminar pelatihan",
+      "pembuatan game Unity",
+      "oleh jurusan.",
     ],
   },
   {
@@ -60,9 +60,10 @@ const highlights = [
     lines: [
       "Dicoding 2026. Mengikuti",
       "pembelajaran junior data",
-      "scientist dan terus",
-      "memperluas bidang yang",
-      "saya pelajari.",
+      "scientist dan visualisasi",
+      "data serta memperluas",
+      "bidang yang saya",
+      "pelajari.",
     ],
   },
   {
@@ -70,11 +71,10 @@ const highlights = [
     edge: 70.3,
     top: 70.5,
     lines: [
-      "Kini: UI/UX E-Commerce",
-      "Compify bersama tim, dan",
-      "web portofolio pribadi",
-      "sebagai proyek individu",
-      "di tahun 2026.",
+      "Kini: Merancang dan membuat",
+      "website Manajemen Usaha Mandiri",
+      "SMKN 1 Bangsri",
+      "bersama tim ARG",
     ],
   },
 ] as const;
