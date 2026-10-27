@@ -880,7 +880,7 @@ export default function Works() {
                   delay: 0.08,
                   ease: "power2.inOut",
                 }
-              : false,
+              : undefined,
           onUpdate: sync,
           onRefresh: (self) => {
             measure();
