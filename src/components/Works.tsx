@@ -61,7 +61,7 @@ const BARREL_RESPONSE = 7;
 const ENTRY_SCREENS = 0.7;
 // Panjang scroll (layar) fase tangga merah di akhir Skills. Harus sama dengan
 // COVER_SCREENS - COVER_LEAD di Skills.
-const STAIR_IN_SCREENS = 0.9;
+const STAIR_IN_SCREENS = 1.7;
 const BG_COLOR = "#e00000";
 const EXIT_SCREENS = 1;
 const EXIT_COLOR = "#000";
@@ -71,13 +71,17 @@ const STAIR_SKEW = 1.6;
 const STAIR_JITTER = [0, 0.5, 0.15, 0.7, 0.3, 0.6, 0.1, 0.45]; // >= 0
 const STAIR_JITTER_MAX = Math.max(...STAIR_JITTER);
 
+// "sine.inOut" = awal & akhir lebih landai dari power2.inOut.
+// Alternatif: "power1.inOut" (lebih netral) atau "power3.inOut" (lebih dramatis).
+const STAIR_EASE = "sine.inOut";
+
 let stairEase: ((t: number) => number) | undefined;
 
 // Polygon clip-path tangga untuk progres p (0..1). `mirror` = tumbuh dari
 // kanan atas (bukan kiri atas). Lebar tiap baris kontinu supaya halus.
 // Di p = 1 seluruh layar terisi.
 function stairClip(p: number, mirror = false) {
-  stairEase ??= gsap.parseEase("power2.inOut");
+  stairEase ??= gsap.parseEase(STAIR_EASE);
 
   const total = STAIR_COLS + (STAIR_ROWS - 1) * STAIR_SKEW + STAIR_JITTER_MAX;
   const front = stairEase(p) * total;
@@ -1019,7 +1023,7 @@ export default function Works() {
         trigger: wrap,
         start: stairStart,
         end: "top top",
-        scrub: true,
+        scrub: 0.9,
         invalidateOnRefresh: true,
         onUpdate: (self) => apply(self.progress),
         onRefresh: (self) => apply(self.progress),

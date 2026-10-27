@@ -12,7 +12,7 @@ const MAIL_TO = "annosulistyanno@gmail.com";
 
 // Aset background (grain merah + figur jatuh + bintang) dari desain.
 // Simpan sebagai public/contact-bg.webp
-const BG_SRC = "/contact-bg.webp";
+const BG_SRC = "/contact-bg.mp4";
 
 // Satuan blur per karakter (dalam em), supaya blur ikut skala ukuran font.
 const BLUR_STEP = 0.012;
@@ -305,12 +305,15 @@ export default function Contact() {
           className="pointer-events-none absolute inset-0 -z-10 will-change-transform"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <video
             data-bg
             src={BG_SRC}
-            alt=""
-            loading="lazy"
-            decoding="async"
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="metadata"
+            aria-hidden="true"
             draggable={false}
             className="h-full w-full select-none object-cover object-center"
           />

@@ -61,7 +61,7 @@ const BARREL_MAX = 0.4;
 // section ini. Works naik COVER_LEAD ekstra supaya fase tangga selesai tepat
 // saat Works menempel. Nilai (COVER_SCREENS - COVER_LEAD) harus sama dengan
 // STAIR_IN_SCREENS di Works.
-const COVER_SCREENS = 1;
+const COVER_SCREENS = 1.8;
 const COVER_LEAD = 0.1;
 
 // Peta displacement radial untuk lensa barrel seukuran stage. Piksel keluaran
