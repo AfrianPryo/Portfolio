@@ -50,6 +50,13 @@ body {
   color: #fff;
 }
 
+@media (pointer: fine) {
+  #works,
+  #works * {
+    cursor: none !important;
+  }
+}
+
 /* Elemen yang akan dianimasikan GSAP disembunyikan dulu supaya tidak "berkedip" saat load */
 [data-reveal] {
   visibility: hidden;

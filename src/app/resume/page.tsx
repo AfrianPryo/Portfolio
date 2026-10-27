@@ -253,7 +253,7 @@ export default function ResumePage() {
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 bg-[url('/noise.png')] opacity-[0.07] mix-blend-screen"
+          className="pointer-events-none absolute inset-0 z-0 bg-[url('/noise.webp')] opacity-[0.07] mix-blend-screen"
         />
 
         <ResumeMotion className="relative isolate z-10 mx-auto max-w-[1360px]">

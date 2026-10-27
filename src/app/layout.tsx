@@ -72,9 +72,20 @@ export default function RootLayout({
     <html lang="id">
       <head>
         <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+        {/* Switzer dari Fontshare: preconnect mempercepat DNS+TLS, bobot dibatasi
+            ke yang benar-benar dipakai (400/500/600/700). */}
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://cdn.fontshare.com" crossOrigin="anonymous" />
+        <link
+          rel="preload"
+          href="/fonts/AcerokMages.otf"
+          as="font"
+          type="font/otf"
+          crossOrigin="anonymous"
+        />
         <link
           rel="stylesheet"
-          href="https://api.fontshare.com/v2/css?f[]=switzer@300,400,500,600,700,800,900&display=swap"
+          href="https://api.fontshare.com/v2/css?f[]=switzer@400,500,600,700&display=swap"
         />
       </head>
       <body>

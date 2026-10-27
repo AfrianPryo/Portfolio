@@ -10,32 +10,102 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 // Ganti isi daftar ini dengan skill final. Jumlah item menentukan panjang scroll
 // (1 skill = 1 layar). Judul yang panjang otomatis turun ke baris berikutnya.
+// `photo` = gambar yang mengikuti cursor (sementara dummy, ganti dengan foto asli).
 const SKILLS = [
   {
     title: "UI/UX DESIGN",
+    photo: "/skills/dummy-1.jpg",
     description:
       "Merancang antarmuka aplikasi dan web dengan Figma, dari riset sampai prototipe.",
   },
   {
     title: "FULLSTACK DEVELOPMENT",
+    photo: "/skills/dummy-2.jpg",
     description:
       "Membangun aplikasi web modern dengan React, Laravel, dan MySQL, dari tampilan sampai database.",
   },
   {
     title: "GRAPHIC DESIGN",
+    photo: "/skills/dummy-3.jpg",
     description:
       "Mengolah visual dengan Photoshop, Illustrator, Affinity, dan Canva untuk berbagai kebutuhan.",
   },
   {
     title: "MOTION & INTERACTION",
+    photo: "/skills/dummy-4.jpg",
     description:
       "Membuat animasi dan interaksi yang halus dengan After Effects, Blender, dan Framer.",
   },
 ];
 
+// Foto yang mengikuti cursor: kemiringan dasar & batas kemiringan saat digerakkan.
+const PHOTO_TILT = -4;
+const PHOTO_TILT_MAX = 14;
+// Perspektif 3D: batas miring (derajat) mengikuti arah gerak cursor.
+const PHOTO_PERSPECTIVE = 900;
+const PHOTO_TILT_3D_MAX = 12;
+// Lensa barrel berlaku di SELURUH section (pusat = tengah stage); hanya foto
+// yang mengikuti cursor yang melewatinya. Makin jauh dari tengah, makin kuat
+// lengkungnya, dan foto miring (permukaan cembung) sampai sebesar ini di tepi.
+const PHOTO_SURFACE_TILT = 26;
+// Jangkauan lensa: makin besar, makin cepat lengkung/miring terasa dari tengah.
+const LENS_REACH = 1.3;
+// Kekuatan barrel (SVG feDisplacementMap): dasar, maks yang dikodekan di peta.
+const BARREL_BASE = 0.26;
+const BARREL_MAX = 0.4;
+
+// ---- Transisi ke section Works ----
+// Setelah skill terakhir ada scroll tambahan (COVER_SCREENS layar) tempat
+// tangga merah tumbuh. Tangga itu digambar oleh section Works pada lapisan
+// fixed seukuran layar (bukan di sini), jadi tidak bergantung pada geometri
+// section ini. Works naik COVER_LEAD ekstra supaya fase tangga selesai tepat
+// saat Works menempel. Nilai (COVER_SCREENS - COVER_LEAD) harus sama dengan
+// STAIR_IN_SCREENS di Works.
+const COVER_SCREENS = 1;
+const COVER_LEAD = 0.1;
+
+// Peta displacement radial untuk lensa barrel seukuran stage. Piksel keluaran
+// mengambil sampel dari titik yang lebih jauh dari pusat, sehingga isi menyusut
+// ke tepi dan bentuk foto melengkung seperti tong. `aspect` = tinggi / lebar.
+function createBarrelMap(aspect: number) {
+  const w = 128;
+  const h = Math.max(16, Math.round(w * aspect));
+  const canvas = document.createElement("canvas");
+
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext("2d");
+
+  if (!ctx) return "";
+
+  const data = ctx.createImageData(w, h);
+
+  for (let j = 0; j < h; j += 1) {
+    for (let i = 0; i < w; i += 1) {
+      const u = ((i + 0.5) / w) * 2 - 1;
+      const v = ((j + 0.5) / h) * 2 - 1;
+      // Linear terhadap jarak (bukan kuadrat) supaya lensa terasa lebih luas.
+      const r2 = Math.sqrt(u * u + v * v);
+      const o = (j * w + i) * 4;
+
+      data.data[o] = Math.round((0.5 + (BARREL_MAX * r2 * u) / 2) * 255);
+      data.data[o + 1] = Math.round(
+        (0.5 + (BARREL_MAX * r2 * v * aspect) / 2) * 255,
+      );
+      data.data[o + 2] = 128;
+      data.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+
+  return canvas.toDataURL();
+}
+
 export default function Skills() {
   const sectionRef = useRef<HTMLElement>(null);
   const activeIndexRef = useRef(0);
+  const prevPhotoRef = useRef(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [layoutKey, setLayoutKey] = useState(0);
 
@@ -72,14 +142,14 @@ export default function Skills() {
       const titles = gsap.utils.toArray<HTMLElement>(".skills-title", section);
       const descriptions = gsap.utils.toArray<HTMLElement>(
         ".skills-desc",
-        section
+        section,
       );
       const captions = [...titles, ...descriptions];
       const pegasus = section.querySelector<HTMLElement>(".skills-pegasus");
       const lastIndex = SKILLS.length - 1;
 
       const titleChars = titles.map((title) =>
-        gsap.utils.toArray<HTMLElement>(".skills-char", title)
+        gsap.utils.toArray<HTMLElement>(".skills-char", title),
       );
       // Baris deskripsi dideteksi dari posisi vertikal kata (offsetTop)
       // karena pembungkusan teks dinamis.
@@ -109,7 +179,7 @@ export default function Skills() {
         tl: gsap.core.Timeline,
         target: gsap.TweenTarget,
         at: number,
-        amp = 1
+        amp = 1,
       ) => {
         tl.to(
           target,
@@ -133,13 +203,13 @@ export default function Skills() {
             ],
             ease: "none",
           },
-          at
+          at,
         );
       };
       const glitchOut = (
         tl: gsap.core.Timeline,
         target: gsap.TweenTarget,
-        at: number
+        at: number,
       ) => {
         tl.to(
           target,
@@ -151,7 +221,7 @@ export default function Skills() {
             ],
             ease: "none",
           },
-          at
+          at,
         );
       };
 
@@ -160,7 +230,7 @@ export default function Skills() {
         tl: gsap.core.Timeline,
         index: number,
         at: number,
-        spread: number
+        spread: number,
       ) => {
         const chars = titleChars[index];
 
@@ -172,7 +242,7 @@ export default function Skills() {
           glitchTo(
             tl,
             char,
-            at + (order[i] / Math.max(chars.length - 1, 1)) * spread
+            at + (order[i] / Math.max(chars.length - 1, 1)) * spread,
           );
         });
       };
@@ -182,7 +252,7 @@ export default function Skills() {
         index: number,
         at: number,
         duration: number,
-        gap: number
+        gap: number,
       ) => {
         descLines[index]?.forEach((words, lineIndex) => {
           tl.fromTo(
@@ -196,7 +266,7 @@ export default function Skills() {
               ease: "power2.out",
               immediateRender: false,
             },
-            at + lineIndex * gap
+            at + lineIndex * gap,
           );
         });
       };
@@ -246,14 +316,15 @@ export default function Skills() {
       });
 
       // Pergantian skill mengikuti scroll: section di-pin (sticky) dan satu
-      // layar scroll = satu skill.
+      // layar scroll = satu skill. Rentangnya hanya (jumlah skill - 1) layar;
+      // sisa scroll (COVER_SCREENS) dipakai transisi tangga merah.
       const projectMedia = gsap.matchMedia();
 
       if (lastIndex > 0) {
         const scrollTriggerOptions = {
           trigger: section,
           start: "top top",
-          end: "bottom bottom",
+          end: () => `+=${lastIndex * window.innerHeight}`,
           invalidateOnRefresh: true,
         };
 
@@ -276,7 +347,11 @@ export default function Skills() {
             const enterAt = start + SPAN * 0.36;
 
             // Skill lama: glitch keluar.
-            glitchOut(timeline, [titles[index - 1], descriptions[index - 1]], start);
+            glitchOut(
+              timeline,
+              [titles[index - 1], descriptions[index - 1]],
+              start,
+            );
 
             // Pegasus ikut berkedip tipis saat pergantian.
             if (pegasus) glitchTo(timeline, pegasus, start + SPAN * 0.3, 0.5);
@@ -292,10 +367,16 @@ export default function Skills() {
                 ease: "none",
                 immediateRender: false,
               },
-              enterAt
+              enterAt,
             );
             addTitleIn(timeline, index, enterAt, SPAN * 0.24);
-            addDescIn(timeline, index, enterAt + SPAN * 0.08, SPAN * 0.2, SPAN * 0.07);
+            addDescIn(
+              timeline,
+              index,
+              enterAt + SPAN * 0.08,
+              SPAN * 0.2,
+              SPAN * 0.07,
+            );
           }
           // padding agar progres scroll 0..1 = seluruh rangkaian skill
           timeline.set({}, {}, lastIndex);
@@ -322,15 +403,16 @@ export default function Skills() {
       scope: sectionRef,
       dependencies: [layoutKey],
       revertOnUpdate: true,
-    }
+    },
   );
 
   // ===== Line drawing (lining) =====
   // Terpisah dari effect di atas dan TANPA dependencies supaya animasi tidak
-  // ter-revert saat layout dihitung ulang. Reveal dari tengah ke kiri & kanan.
-  // Karena gambar lebih lebar dari layar, target reveal dihitung dari porsi
-  // gambar yang benar-benar terlihat, jadi garis sampai ke tepi layar tepat di
-  // akhir animasi (tidak ada waktu terbuang di area yang tak terlihat).
+  // ter-revert saat layout dihitung ulang. Gambar lebih lebar dari layar, jadi
+  // target reveal dihitung dari porsi gambar yang benar-benar terlihat; garis
+  // sampai ke tepi layar tepat di akhir animasi.
+  // Urutan: garis tengah "ditarik" dulu dari tengah ke kiri & kanan, lalu
+  // belah ketupat dan kotak terbuka ke atas-bawah dari garis itu.
   useGSAP(
     () => {
       const section = sectionRef.current;
@@ -339,9 +421,18 @@ export default function Skills() {
       if (!section || !lining) return;
 
       const SHOWN = "inset(0% 0% 0% 0%)";
-      const DRAW_DELAY = 0.3; // jeda sebelum mulai menggambar (detik)
-      const DRAW_DURATION = 2.4;
-      const HIDE_DURATION = 0.95;
+      const DRAW_DELAY = 0.12; // jeda sebelum mulai menggambar (detik)
+      const AXIS_DURATION = 1.7; // garis tengah menjalar ke tepi layar
+      const UNFOLD_DELAY = 0.35; // bentuk mulai terbuka setelah garis jalan sebentar
+      const UNFOLD_DURATION = 1.6;
+      // Menghilang: langsung bergerak begitu terpicu (easing tanpa awal lambat).
+      const HIDE_UNFOLD_DURATION = 1.3;
+      const HIDE_AXIS_DELAY = 0.2;
+      const HIDE_AXIS_DURATION = 1.4;
+      // Posisi garis tengah pada gambar (% tinggi) dan setengah tebal pita
+      // yang terlihat di awal (hanya garis tengahnya).
+      const AXIS_Y = 49.27;
+      const AXIS_BAND = 0.5;
 
       // Inset kiri/kanan (persen) saat garis tepat menyentuh tepi layar.
       const getEdgeInset = () => {
@@ -353,15 +444,20 @@ export default function Skills() {
       const media = gsap.matchMedia();
 
       media.add("(prefers-reduced-motion: no-preference)", () => {
-        // Progres reveal 0..1 dianimasikan lewat objek proxy, lalu clip-path
-        // dihitung simetris (kiri = kanan) di tiap frame. Dengan begitu tidak
-        // ada interpolasi string clip-path yang bisa membuat satu sisi
-        // langsung muncul.
-        const state = { p: 0 };
-        const applyClip = () => {
-          const inset = 50 - state.p * (50 - getEdgeInset());
+        // Progres h (lebar) dan v (tinggi) 0..1 dianimasikan lewat objek proxy,
+        // lalu clip-path dihitung simetris (kiri = kanan, atas/bawah mengikuti
+        // posisi garis tengah) di tiap frame. Dengan begitu tidak ada
+        // interpolasi string clip-path yang bisa membuat satu sisi langsung
+        // muncul.
+        const state = { h: 0, v: 0 };
+        let draw: gsap.core.Timeline | undefined;
 
-          lining.style.clipPath = `inset(0% ${inset}% 0% ${inset}%)`;
+        const applyClip = () => {
+          const x = 50 - state.h * (50 - getEdgeInset());
+          const top = (1 - state.v) * (AXIS_Y - AXIS_BAND);
+          const bottom = (1 - state.v) * (100 - AXIS_Y - AXIS_BAND);
+
+          lining.style.clipPath = `inset(${top}% ${x}% ${bottom}% ${x}%)`;
         };
 
         gsap.set(lining, { autoAlpha: 1 });
@@ -373,19 +469,47 @@ export default function Skills() {
           if (shown === show) return;
 
           shown = show;
-          gsap.to(state, {
-            p: show ? 1 : 0,
-            duration: show ? DRAW_DURATION : HIDE_DURATION,
-            delay: show ? DRAW_DELAY : 0,
-            ease: show ? "power2.out" : "power2.in",
-            overwrite: true,
+          draw?.kill();
+
+          // Menghilang: kebalikan urutan muncul (bentuk menutup ke garis tengah,
+          // lalu garis ditarik kembali ke tengah), tanpa delay dan tanpa awal
+          // lambat. Berangkat dari progres saat ini, jadi aman bila dipicu di
+          // tengah animasi menggambar.
+          if (!show) {
+            draw = gsap.timeline({ onUpdate: applyClip, onComplete: applyClip });
+            draw
+              .to(
+                state,
+                { v: 0, duration: HIDE_UNFOLD_DURATION, ease: "power2.out" },
+                0,
+              )
+              .to(
+                state,
+                { h: 0, duration: HIDE_AXIS_DURATION, ease: "power2.in" },
+                HIDE_AXIS_DELAY,
+              );
+            return;
+          }
+
+          draw = gsap.timeline({
+            delay: DRAW_DELAY,
             onUpdate: applyClip,
             onComplete: () => {
               // Setelah selesai, lepas clip sepenuhnya (aman saat resize).
-              if (show) lining.style.clipPath = SHOWN;
-              else applyClip();
+              lining.style.clipPath = SHOWN;
             },
           });
+          draw
+            .to(
+              state,
+              { h: 1, duration: AXIS_DURATION, ease: "power3.out" },
+              0,
+            )
+            .to(
+              state,
+              { v: 1, duration: UNFOLD_DURATION, ease: "power2.inOut" },
+              UNFOLD_DELAY,
+            );
         };
 
         // Zona tampil: dari section mulai masuk sampai stage selesai di-pin.
@@ -407,6 +531,7 @@ export default function Skills() {
           start: "top top",
           end: "bottom bottom",
           onEnter: () => toggleLining(true),
+          onLeave: () => toggleLining(false),
           onLeaveBack: () => toggleLining(false),
         });
 
@@ -419,6 +544,8 @@ export default function Skills() {
         ) {
           toggleLining(true);
         }
+
+        return () => draw?.kill();
       });
 
       media.add("(prefers-reduced-motion: reduce)", () => {
@@ -427,7 +554,356 @@ export default function Skills() {
 
       return () => media.revert();
     },
-    { scope: sectionRef }
+    { scope: sectionRef },
+  );
+
+  // ===== Foto yang mengikuti cursor =====
+  // Hanya untuk pointer halus & tanpa reduced-motion. Posisi diikuti dengan
+  // easing (quickTo); foto miring (2D + perspektif 3D) mengikuti arah/kecepatan
+  // gerak, dan efek barrel distortion menguat saat cursor bergerak cepat.
+  useGSAP(
+    () => {
+      const section = sectionRef.current;
+      const photo = section?.querySelector<HTMLElement>(".skills-photo");
+      const inner = section?.querySelector<HTMLElement>(".skills-photo-inner");
+      const barrel = section?.querySelector<SVGFilterElement>("#skills-barrel");
+      const map =
+        section?.querySelector<SVGFEImageElement>("#skills-barrel-map");
+      const disp = section?.querySelector<SVGFEDisplacementMapElement>(
+        "#skills-barrel-disp",
+      );
+      // Layer seukuran stage: tempat filter lensa barrel dipasang.
+      const layer = photo?.parentElement;
+
+      if (!section || !photo || !inner || !barrel || !map || !disp || !layer)
+        return;
+
+      // Alias non-null untuk dipakai di function declaration (hoisted).
+      const photoEl: HTMLElement = photo;
+      const innerEl: HTMLElement = inner;
+      const layerEl: HTMLElement = layer;
+      const media = gsap.matchMedia();
+
+      media.add(
+        "(pointer: fine) and (prefers-reduced-motion: no-preference)",
+        () => {
+          gsap.set(photo, {
+            xPercent: -50,
+            yPercent: -50,
+            rotation: PHOTO_TILT,
+            transformPerspective: PHOTO_PERSPECTIVE,
+          });
+          gsap.set(inner, { autoAlpha: 0, scale: 0.6 });
+
+          // ----- Barrel distortion (lensa seluas section) -----
+          const barrelState = { k: BARREL_BASE };
+          let width = layer.offsetWidth;
+          let mapTimer: number | undefined;
+
+          const applyBarrel = () => {
+            disp.setAttribute(
+              "scale",
+              String((width * barrelState.k) / BARREL_MAX),
+            );
+          };
+          const applyMap = () => {
+            map.setAttribute(
+              "href",
+              createBarrelMap(
+                layer.offsetHeight / Math.max(layer.offsetWidth, 1),
+              ),
+            );
+          };
+          const applySize = () => {
+            width = layer.offsetWidth;
+
+            const height = layer.offsetHeight;
+
+            barrel.setAttribute("width", String(width));
+            barrel.setAttribute("height", String(height));
+            map.setAttribute("width", String(width));
+            map.setAttribute("height", String(height));
+            applyBarrel();
+            // Peta bergantung pada rasio stage, jadi dibuat ulang saat resize.
+            window.clearTimeout(mapTimer);
+            mapTimer = window.setTimeout(applyMap, 120);
+          };
+
+          applyMap();
+          applySize();
+          // Filter displacement di layer seukuran stage itu mahal: hanya dipasang
+          // selama foto kursor tampil (lihat show/hide), dan dilewati di
+          // perangkat dengan CPU lemah (sama seperti Works).
+          const lowPower = (navigator.hardwareConcurrency ?? 8) <= 4;
+
+          const resizeObserver = new ResizeObserver(applySize);
+
+          resizeObserver.observe(layer);
+
+          const xTo = gsap.quickTo(photo, "x", {
+            duration: 0.8,
+            ease: "power3.out",
+          });
+          const yTo = gsap.quickTo(photo, "y", {
+            duration: 0.8,
+            ease: "power3.out",
+          });
+          const rotTo = gsap.quickTo(photo, "rotation", {
+            duration: 0.9,
+            ease: "power3.out",
+          });
+          const rotXTo = gsap.quickTo(photo, "rotationX", {
+            duration: 0.9,
+            ease: "power3.out",
+          });
+          const rotYTo = gsap.quickTo(photo, "rotationY", {
+            duration: 0.9,
+            ease: "power3.out",
+          });
+          const kTo = gsap.quickTo(barrelState, "k", {
+            duration: 0.7,
+            ease: "power3.out",
+            onUpdate: applyBarrel,
+          });
+
+          let visible = false;
+          let lastX = 0;
+          let lastY = 0;
+          let settle: number | undefined;
+          // Posisi foto relatif terhadap tengah stage, -1..1 (permukaan cembung:
+          // di kanan sisi kanan menjauh, di bawah sisi bawah menjauh).
+          let surfaceY = 0;
+          let surfaceX = 0;
+
+          const setSurface = (x: number, y: number) => {
+            const rect = layer.getBoundingClientRect();
+
+            surfaceY = gsap.utils.clamp(
+              -1,
+              1,
+              ((x / rect.width) * 2 - 1) * LENS_REACH,
+            );
+            surfaceX = gsap.utils.clamp(
+              -1,
+              1,
+              -((y / rect.height) * 2 - 1) * LENS_REACH,
+            );
+          };
+
+          const trigger = ScrollTrigger.create({
+            trigger: section,
+            start: "top bottom",
+            end: "bottom top",
+            onToggle: (self) => {
+              if (!self.isActive) hide();
+            },
+          });
+
+          function show(
+            x: number,
+            y: number,
+            clientX: number,
+            clientY: number,
+          ) {
+            if (visible || !trigger.isActive) return;
+
+            visible = true;
+            if (!lowPower) layerEl.style.filter = "url(#skills-barrel)";
+            lastX = clientX;
+            lastY = clientY;
+            // Mulai dari posisi cursor (tidak meluncur dari pojok).
+            setSurface(x, y);
+            gsap.set(photoEl, {
+              x,
+              y,
+              rotationY: surfaceY * PHOTO_SURFACE_TILT,
+              rotationX: surfaceX * PHOTO_SURFACE_TILT,
+            });
+            // Muncul dengan lensa barrel kuat yang mengendur ke nilai dasar.
+            barrelState.k = BARREL_MAX * 0.85;
+            applyBarrel();
+            kTo(BARREL_BASE);
+            gsap.to(innerEl, {
+              autoAlpha: 1,
+              scale: 1,
+              duration: 0.6,
+              ease: "power3.out",
+              overwrite: true,
+            });
+          }
+
+          function hide() {
+            if (!visible) return;
+
+            visible = false;
+            gsap.to(innerEl, {
+              autoAlpha: 0,
+              scale: 0.6,
+              duration: 0.35,
+              ease: "power2.in",
+              overwrite: true,
+              onComplete: () => {
+                // Lepas filter setelah foto benar-benar hilang (kecuali sudah tampil lagi).
+                if (!visible) layerEl.style.filter = "";
+              },
+            });
+          }
+
+          const onMove = (event: PointerEvent) => {
+            const rect = layer.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+
+            show(x, y, event.clientX, event.clientY);
+            if (!visible) return;
+
+            const dx = event.clientX - lastX;
+            const dy = event.clientY - lastY;
+
+            lastX = event.clientX;
+            lastY = event.clientY;
+
+            setSurface(x, y);
+            xTo(x);
+            yTo(y);
+            rotTo(
+              gsap.utils.clamp(
+                PHOTO_TILT - PHOTO_TILT_MAX,
+                PHOTO_TILT + PHOTO_TILT_MAX,
+                PHOTO_TILT + dx * 0.6,
+              ),
+            );
+            // Perspektif: sisi yang searah gerak "maju", seperti ditarik cursor.
+            rotYTo(
+              surfaceY * PHOTO_SURFACE_TILT +
+                gsap.utils.clamp(
+                  -PHOTO_TILT_3D_MAX,
+                  PHOTO_TILT_3D_MAX,
+                  dx * 0.6,
+                ),
+            );
+            rotXTo(
+              surfaceX * PHOTO_SURFACE_TILT +
+                gsap.utils.clamp(
+                  -PHOTO_TILT_3D_MAX,
+                  PHOTO_TILT_3D_MAX,
+                  -dy * 0.6,
+                ),
+            );
+            // Makin cepat cursor bergerak, makin kuat lengkung barrel-nya.
+            kTo(
+              Math.min(
+                BARREL_BASE + Math.hypot(dx, dy) * 0.004,
+                BARREL_BASE + 0.14,
+              ),
+            );
+
+            // Saat cursor berhenti, semuanya kembali ke posisi dasar.
+            window.clearTimeout(settle);
+            settle = window.setTimeout(() => {
+              rotTo(PHOTO_TILT);
+              rotXTo(surfaceX * PHOTO_SURFACE_TILT);
+              rotYTo(surfaceY * PHOTO_SURFACE_TILT);
+              kTo(BARREL_BASE);
+            }, 90);
+          };
+
+          section.addEventListener("pointermove", onMove, { passive: true });
+          section.addEventListener("pointerleave", hide);
+
+          return () => {
+            window.clearTimeout(settle);
+            section.removeEventListener("pointermove", onMove);
+            section.removeEventListener("pointerleave", hide);
+            window.clearTimeout(mapTimer);
+            resizeObserver.disconnect();
+            layer.style.filter = "";
+            trigger.kill();
+          };
+        },
+      );
+
+      return () => media.revert();
+    },
+    { scope: sectionRef },
+  );
+
+  // ===== Pergantian foto: image stretch (mengikuti skill aktif saat scroll) =====
+  // Foto lama menyusut ke atas (scaleY 1 -> 0, titik tumpu di atas) sementara
+  // foto baru melar dari bawah (scaleY 0 -> 1, titik tumpu di bawah). Tinggi
+  // keduanya selalu berjumlah 100%, jadi batas pertemuannya naik dari bawah ke
+  // atas dan isi foto ikut tertekan/meregang.
+  useGSAP(
+    () => {
+      const section = sectionRef.current;
+
+      if (!section) return;
+
+      const slides = gsap.utils.toArray<HTMLElement>(
+        ".skills-photo-slide",
+        section,
+      );
+      const prev = prevPhotoRef.current;
+      const next = activeIndex;
+      const reduce = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+
+      prevPhotoRef.current = next;
+
+      const settle = () => {
+        slides.forEach((slide, i) => {
+          gsap.set(slide, {
+            autoAlpha: i === next ? 1 : 0,
+            scaleY: i === next ? 1 : 0,
+            zIndex: i === next ? 2 : 0,
+            transformOrigin: "50% 50%",
+          });
+        });
+      };
+
+      // Hentikan transisi yang masih berjalan sebelum memulai yang baru.
+      gsap.killTweensOf(slides);
+
+      if (prev === next || !slides[next] || !slides[prev] || reduce) {
+        settle();
+        return;
+      }
+
+      const outgoing = slides[prev];
+      const incoming = slides[next];
+
+      slides.forEach((slide, i) => {
+        if (i !== prev && i !== next) {
+          gsap.set(slide, { autoAlpha: 0, scaleY: 0, zIndex: 0 });
+        }
+      });
+      gsap.set(outgoing, {
+        autoAlpha: 1,
+        scaleY: 1,
+        zIndex: 2,
+        transformOrigin: "50% 0%",
+      });
+      gsap.set(incoming, {
+        autoAlpha: 1,
+        scaleY: 0,
+        zIndex: 3,
+        transformOrigin: "50% 100%",
+      });
+
+      const config = { duration: 0.7, ease: "power3.inOut" };
+
+      gsap.to(outgoing, { scaleY: 0, ...config });
+      gsap.to(incoming, {
+        scaleY: 1,
+        ...config,
+        onComplete: () => {
+          // Abaikan kalau skill sudah berganti lagi saat animasi berjalan.
+          if (activeIndexRef.current === next) settle();
+        },
+      });
+    },
+    { scope: sectionRef, dependencies: [activeIndex] },
   );
 
   return (
@@ -436,12 +912,17 @@ export default function Skills() {
       id="skills"
       aria-labelledby="skills-heading"
       style={{
-        marginBottom:
-          "calc(-1 * (clamp(120px,20vh,240px) + clamp(48px,8vh,96px)))",
-        height: `${SKILLS.length * 100}svh`,
-        minHeight: `${SKILLS.length * 600}px`,
+        // Works (sibling berikutnya) naik 1 layar + COVER_LEAD ke atas dan
+        // menempel di atas stage ini tepat saat tangga merah sudah penuh,
+        // SEBELUM stage ini mulai terangkat. Selisih COVER_LEAD jadi ruang
+        // toleransi supaya tidak pernah ada celah hitam di bawah.
+        marginBottom: `calc(-100svh - ${COVER_LEAD * 100}svh)`,
+        // Tinggi = satu layar per skill + scroll tambahan untuk transisi
+        // tangga merah ke Works.
+        height: `${(SKILLS.length + COVER_SCREENS) * 100}svh`,
+        minHeight: `${(SKILLS.length + COVER_SCREENS) * 600}px`,
       }}
-      className="relative isolate bg-[#0a0303] text-white [&+*]:relative [&+*]:z-10"
+      className="relative isolate bg-[#0a0303] text-white [&+*]:pointer-events-none [&+*]:relative [&+*]:z-10"
     >
       <h2 id="skills-heading" className="sr-only">
         Skills
@@ -449,16 +930,18 @@ export default function Skills() {
 
       {/* Stage menempel (sticky) setinggi layar selama skill berganti.
           overflow-hidden ada di sini, bukan di section, supaya sticky tetap jalan. */}
-      <div className="sticky top-0 h-svh w-full overflow-hidden">
+      <div className="sticky top-0 h-svh min-h-screen w-full overflow-hidden">
         {/* Lining latar (gambar webp di /public/lining-skill.webp). Wrapper
             dibuat lebih lebar dari stage (191%; 230vw di mobile) supaya kotak
-            tengah ±50% lebar layar dan ujung diamond terpotong di tepi. Garis
+            tengah ±50% lebar layar dan ujung diamond terpotong di tepi. Di layar
+            sangat lebar (mis. 21:9) lebarnya dibatasi 340svh supaya kotak tengah
+            tidak lebih tinggi dari stage; di 16:9 hasilnya sama seperti sebelumnya. Garis
             tengah (49,27% tinggi gambar) tetap disejajarkan dengan tengah stage
             lewat translate-y persentase, jadi tetap sejajar dengan title berapa
             pun lebarnya. Di-reveal lewat clip-path oleh GSAP (class skills-lining). */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 z-0 w-[191%] -translate-x-1/2 -translate-y-[49.27%] max-sm:w-[230vw]"
+          className="pointer-events-none absolute left-1/2 top-1/2 z-0 w-[min(191%,340svh)] -translate-x-1/2 -translate-y-[49.27%] max-sm:w-[230vw]"
         >
           <Image
             src="/lining-skill.webp"
@@ -487,6 +970,80 @@ export default function Skills() {
           </div>
         </div>
 
+        {/* Filter barrel distortion untuk foto yang mengikuti cursor (peta
+            displacement dan ukuran diisi dari JS). */}
+        <svg
+          aria-hidden="true"
+          width="0"
+          height="0"
+          className="pointer-events-none absolute"
+        >
+          <filter
+            id="skills-barrel"
+            x="0"
+            y="0"
+            width="300"
+            height="225"
+            filterUnits="userSpaceOnUse"
+            primitiveUnits="userSpaceOnUse"
+            colorInterpolationFilters="sRGB"
+          >
+            <feImage
+              id="skills-barrel-map"
+              x="0"
+              y="0"
+              width="300"
+              height="225"
+              preserveAspectRatio="none"
+              result="map"
+            />
+            <feDisplacementMap
+              id="skills-barrel-disp"
+              in="SourceGraphic"
+              in2="map"
+              scale="60"
+              xChannelSelector="R"
+              yChannelSelector="G"
+            />
+          </filter>
+        </svg>
+
+        {/* Foto yang mengikuti cursor (dummy dulu). Layer = seukuran stage, tempat
+            filter lensa barrel (hanya foto yang melewatinya, teks/pegasus/lining
+            tidak). Wrapper foto = posisi, miring & perspektif (GSAP quickTo),
+            inner = muncul/hilang, frame = bingkai, slide = satu foto per skill (image stretch saat
+            scroll). Tinta merah dari overlay multiply supaya foto asli nanti
+            tetap menyatu dengan tema. */}
+        <div
+          aria-hidden="true"
+          className="skills-photo-layer pointer-events-none absolute inset-0 z-[15]"
+        >
+          <div className="skills-photo absolute left-0 top-0 w-[clamp(180px,21vw,380px)] will-change-transform">
+            <div className="skills-photo-inner invisible">
+              <div className="skills-photo-frame relative isolate aspect-[4/3] overflow-hidden bg-[#1a0505]">
+                {SKILLS.map((skill) => (
+                  <div
+                    key={skill.photo}
+                    className="skills-photo-slide invisible absolute inset-0 overflow-hidden will-change-transform"
+                  >
+                    <Image
+                      src={skill.photo}
+                      alt=""
+                      fill
+                      unoptimized
+                      sizes="21vw"
+                      draggable={false}
+                      className="skills-photo-img select-none object-cover contrast-125 grayscale"
+                    />
+                  </div>
+                ))}
+                <div className="absolute inset-0 z-10 bg-[#d3141f] mix-blend-multiply" />
+                <div className="absolute inset-0 z-10 bg-[#ff6b6b]/25 mix-blend-screen" />
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Title (kiri): semua skill menumpuk di sel grid yang sama, menempel
             dari ATAS supaya baris pertama selalu sejajar dengan deskripsi.
             Mobile: rata tengah. */}
@@ -499,7 +1056,7 @@ export default function Skills() {
               key={skill.title}
               aria-hidden={index !== activeIndex}
               aria-label={skill.title}
-              className="skills-title col-start-1 row-start-1 font-acerok text-[clamp(26px,3.7vw,72px)] font-normal uppercase leading-[1.05] tracking-[0.01em] text-flame max-sm:text-center max-sm:text-[clamp(28px,9vw,44px)]"
+              className="skills-title col-start-1 row-start-1 font-acerok text-[clamp(24px,3.2vw,62px)] font-normal uppercase leading-[0.92] tracking-[-0.07em] text-flame max-sm:text-center max-sm:text-[clamp(26px,8vw,40px)]"
             >
               <span aria-hidden="true" className="block">
                 {skill.title.split(" ").map((word, wordIndex, words) => (
@@ -532,7 +1089,7 @@ export default function Skills() {
             <p
               key={skill.title}
               aria-hidden={index !== activeIndex}
-              className="skills-desc col-start-1 row-start-1 text-left font-switzer text-[clamp(12px,1.55vw,30px)] font-medium leading-[1.15] tracking-[-0.03em] text-flame max-sm:text-center max-sm:text-[14px]"
+              className="skills-desc col-start-1 row-start-1 text-left font-switzer text-[clamp(11px,1.2vw,24px)] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-flame max-sm:text-center max-sm:text-[13px]"
             >
               <span className="block">
                 {skill.description.split(" ").map((word, wordIndex, words) => (

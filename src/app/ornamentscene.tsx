@@ -247,7 +247,7 @@ export default function OrnamentScene({
       const H = host.height;
       if (!W || !H || !a.width) return;
 
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5)); // sama dengan FlameCursor: hemat memori GPU (iGPU berbagi RAM)
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25)); // sama dengan FlameCursor: hemat memori GPU (iGPU berbagi RAM)
       renderer.setSize(W, H, false);
       camera.aspect = W / H;
 

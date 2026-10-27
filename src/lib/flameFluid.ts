@@ -18,10 +18,10 @@ export type FlameOptions = {
 
 const DEFAULTS: Required<FlameOptions> = {
   simRes: 128,
-  dyeRes: 640,
+  dyeRes: 512,
   velocityDissipation: 0.9,
   dyeDissipation: 2.8,
-  pressureIterations: 18,
+  pressureIterations: 14,
   curl: 16,
   buoyancy: 1.2,
   splatRadius: 0.05,
@@ -288,7 +288,7 @@ export function createFlameFluid(canvas: HTMLCanvasElement, opts: FlameOptions =
 
   // ---------- resize ----------
   const fit = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
     const w = Math.max(2, Math.round(canvas.clientWidth * dpr));
     const h = Math.max(2, Math.round(canvas.clientHeight * dpr));
     if (w !== canvas.width || h !== canvas.height || !velocity) {

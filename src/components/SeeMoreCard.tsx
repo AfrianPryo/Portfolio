@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 
 const NUM_STRIPS = 9;
 
@@ -16,6 +16,61 @@ const STRIP_CONFIGS = [
   { rotY:  7.0, z: -2.0, shadow: "rgba(0,0,0,0.14)" },
   { rotY:  9.5, z: -3.8, shadow: "rgba(0,0,0,0.26)" },
 ];
+
+// 9 strip statis: hanya bergantung pada isHovered. Dipisah + memo supaya setiap
+// gerakan mouse (update tilt/shine) tidak ikut me-render ulang 9 <img> ini.
+const CardStrips = memo(function CardStrips({
+  isHovered,
+}: {
+  isHovered: boolean;
+}) {
+  return (
+    <>
+    {STRIP_CONFIGS.map((config, i) => {
+      const rotY = isHovered ? config.rotY : 0;
+      const z = isHovered ? config.z : 0;
+
+      return (
+        <div
+          key={i}
+          className="relative h-full overflow-hidden [transform-style:preserve-3d] transition-transform duration-600 ease-[cubic-bezier(0.2,0.9,0.25,1)]"
+          style={{
+            width: `calc(100% / ${NUM_STRIPS} + 0.5px)`,
+            marginRight: i === NUM_STRIPS - 1 ? 0 : "-0.5px",
+            transform: `rotateY(${rotY}deg) translateZ(${z}px)`,
+            transformOrigin: i < 4 ? "right center" : i > 4 ? "left center" : "center center",
+          }}
+        >
+          {/* Gambar kartu See More */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/see-more-card.webp"
+            alt="See More - About Me"
+            draggable={false}
+            className="pointer-events-none absolute top-0 max-w-none select-none"
+            style={{
+              width: `${NUM_STRIPS * 100}%`,
+              height: "100%",
+              left: `-${i * 100}%`,
+            }}
+          />
+
+          {/* Shading silindris melengkung yang sangat halus */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 transition-opacity duration-600"
+            style={{
+              opacity: isHovered ? 1 : 0,
+              backgroundColor: config.shadow,
+              mixBlendMode: i >= 3 && i <= 5 ? "soft-light" : "multiply",
+            }}
+          />
+        </div>
+      );
+    })}
+    </>
+  );
+});
 
 export default function SeeMoreCard({
   href = "mailto:annosulistyanno@gmail.com",
@@ -94,48 +149,7 @@ export default function SeeMoreCard({
           Kurva silinder 9 segmen yang jauh lebih halus, continuous, dan lentur
         */}
         <div className="relative flex h-full w-full [transform-style:preserve-3d]">
-          {STRIP_CONFIGS.map((config, i) => {
-            const rotY = isHovered ? config.rotY : 0;
-            const z = isHovered ? config.z : 0;
-
-            return (
-              <div
-                key={i}
-                className="relative h-full overflow-hidden [transform-style:preserve-3d] transition-transform duration-600 ease-[cubic-bezier(0.2,0.9,0.25,1)]"
-                style={{
-                  width: `calc(100% / ${NUM_STRIPS} + 0.5px)`,
-                  marginRight: i === NUM_STRIPS - 1 ? 0 : "-0.5px",
-                  transform: `rotateY(${rotY}deg) translateZ(${z}px)`,
-                  transformOrigin: i < 4 ? "right center" : i > 4 ? "left center" : "center center",
-                }}
-              >
-                {/* Gambar kartu See More */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/see-more-card.png"
-                  alt="See More - About Me"
-                  draggable={false}
-                  className="pointer-events-none absolute top-0 max-w-none select-none"
-                  style={{
-                    width: `${NUM_STRIPS * 100}%`,
-                    height: "100%",
-                    left: `-${i * 100}%`,
-                  }}
-                />
-
-                {/* Shading silindris melengkung yang sangat halus */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 transition-opacity duration-600"
-                  style={{
-                    opacity: isHovered ? 1 : 0,
-                    backgroundColor: config.shadow,
-                    mixBlendMode: i >= 3 && i <= 5 ? "soft-light" : "multiply",
-                  }}
-                />
-              </div>
-            );
-          })}
+          <CardStrips isHovered={isHovered} />
         </div>
 
         {/* 
@@ -146,8 +160,8 @@ export default function SeeMoreCard({
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-30 overflow-hidden transition-all duration-600"
           style={{
-            WebkitMaskImage: "url('/see-more-card.png')",
-            maskImage: "url('/see-more-card.png')",
+            WebkitMaskImage: "url('/see-more-card.webp')",
+            maskImage: "url('/see-more-card.webp')",
             WebkitMaskSize: "100% 100%",
             maskSize: "100% 100%",
             WebkitMaskRepeat: "no-repeat",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import dynamic from "next/dynamic";
@@ -16,11 +16,33 @@ const OrnamentScene = dynamic(() => import("@/app/ornamentscene"), {
 
 gsap.registerPlugin(useGSAP);
 
+// Lama ornamen 3D tampil sendirian di layar hitam sebelum elemen lain muncul (detik).
+const ORNAMENT_INTRO = 1.4;
+
 export default function Hero() {
   const root = useRef<HTMLElement>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
   const curtainRef = useRef<HTMLDivElement>(null);
   const fillLogoRef = useRef<HTMLDivElement>(null);
+  const logoRef = useRef<HTMLDivElement>(null);
+
+  // Scene 3D (Three.js + 3 GLB) baru dimuat saat browser idle, supaya tidak
+  // berebut dengan hidrasi & render awal. Preloader butuh ~3 detik, jadi ornamen
+  // tetap siap sebelum tirai terangkat (dan scene sudah menangani kasus tirai
+  // yang terangkat lebih dulu lewat flag __heroCurtainLifted + failsafe).
+  const [showOrnament, setShowOrnament] = useState(false);
+  useEffect(() => {
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(() => setShowOrnament(true), { timeout: 800 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(() => setShowOrnament(true), 300);
+    return () => window.clearTimeout(t);
+  }, []);
 
   useGSAP(
     () => {
@@ -34,6 +56,7 @@ export default function Hero() {
         }
         if (curtainRef.current) curtainRef.current.style.display = "none";
         gsap.set("[data-reveal]", { autoAlpha: 1 });
+        gsap.set("[data-hero-bg]", { autoAlpha: 1 });
       });
 
       mm.add("(prefers-reduced-motion: no-preference)", () => {
@@ -46,6 +69,7 @@ export default function Hero() {
           }
           if (curtainRef.current) curtainRef.current.style.display = "none";
           gsap.set("[data-reveal]", { autoAlpha: 1 });
+          gsap.set("[data-hero-bg]", { autoAlpha: 1 });
           gsap.set("[data-heading]", { autoAlpha: 1, y: 0 });
           gsap.set("[data-person]", { autoAlpha: 1, y: 0 });
           gsap.set("[data-nav]", { autoAlpha: 1, y: 0 });
@@ -58,6 +82,9 @@ export default function Hero() {
           gsap.set("[data-heading]", { autoAlpha: 0, y: 35 });
           gsap.set("[data-person]", { autoAlpha: 0, y: 70 });
           gsap.set("[data-nav]", { autoAlpha: 0, y: -15 });
+          // Background gradasi hero disembunyikan: panggung tetap hitam pekat
+          // sampai ornamen 3D selesai muncul.
+          gsap.set("[data-hero-bg]", { autoAlpha: 0 });
 
 
           // ===== Timeline Intro Layar Hitam Preloader (Logo Putih -> Merah -> Fade Out) =====
@@ -82,31 +109,45 @@ export default function Hero() {
         // Jeda sekejap setelah logo penuh merah
         tl.to({}, { duration: 0.25 });
 
-        // 2. Layar hitam fade out secara halus membuka panggung Hero
-        tl.to(curtain, {
-          autoAlpha: 0,
-          duration: 1.1,
-          ease: "power2.inOut",
-          onStart: () => {
-            // Picu animasi ornamen 3D via custom event tanpa menyebabkan re-render
-            if (typeof window !== "undefined") {
-              (window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted = true;
-              window.dispatchEvent(new CustomEvent("hero:curtain-lift"));
-            }
-          },
-          onComplete: () => {
-            if (curtain) curtain.style.display = "none";
-          },
-        });
+        // 2. Loading page (logo) memudar -> layar hitam polos
+        if (logoRef.current) {
+          tl.to(logoRef.current, {
+            autoAlpha: 0,
+            duration: 0.8,
+            ease: "power2.inOut",
+          });
+        }
 
-        // 3. GAMBAR PNG ORANG MUNCUL TERLEBIH DAHULU DARI BAWAH
+        // Layar hitam sejenak
+        tl.to({}, { duration: 0.35 });
+
+        // 3. Tirai dilepas seketika (di bawahnya sudah hitam, jadi tidak ada
+        // lompatan visual) dan ornamen 3D muncul sendirian di atas layar hitam.
+        tl.add("ornament");
+        tl.add(() => {
+          if (curtain) curtain.style.display = "none";
+          // Picu animasi ornamen 3D via custom event tanpa menyebabkan re-render
+          if (typeof window !== "undefined") {
+            (window as unknown as { __heroCurtainLifted?: boolean }).__heroCurtainLifted = true;
+            window.dispatchEvent(new CustomEvent("hero:curtain-lift"));
+          }
+        }, "ornament");
+
+        // 4. Setelah ornamen tampil, background hero dan GAMBAR PNG ORANG
+        // muncul bersamaan dari layar hitam.
+        tl.add("reveal", `ornament+=${ORNAMENT_INTRO}`);
+        tl.to(
+          "[data-hero-bg]",
+          { autoAlpha: 1, duration: 1.3, ease: "power2.inOut" },
+          "reveal"
+        );
         tl.to(
           "[data-person]",
           { autoAlpha: 1, y: 0, duration: 1.35, ease: "power3.out" },
-          "-=0.7"
+          "reveal"
         );
 
-        // 4. SETELAH GAMBAR PNG ORANG MUNCUL, BARULAH TEXT HEADING MUNCUL
+        // SETELAH GAMBAR PNG ORANG MUNCUL, BARULAH TEXT HEADING MUNCUL
         tl.to(
           "[data-heading]",
           { autoAlpha: 1, y: 0, duration: 1.15, ease: "power4.out" },
@@ -160,8 +201,16 @@ export default function Hero() {
   return (
     <section
       ref={root}
-      className="relative h-svh min-h-[500px] w-full overflow-hidden bg-black bg-[url('/hero-gradient.jpg')] bg-cover bg-center"
+      className="relative h-svh min-h-[500px] w-full overflow-hidden bg-black"
     >
+      {/* Background gradasi hero: dipisah dari section supaya bisa dimunculkan
+          belakangan (setelah ornamen 3D) dan panggung awal tetap hitam. */}
+      <div
+        aria-hidden
+        data-hero-bg
+        className="pointer-events-none absolute inset-0 z-0 bg-[url('/hero-gradient.jpg')] bg-cover bg-center"
+      />
+
       {/* ===== Layar Hitam Preloader: Hanya Logo di Tengah ===== */}
       <div
         ref={curtainRef}
@@ -169,7 +218,10 @@ export default function Hero() {
         className="fixed inset-0 z-[100] flex items-center justify-center bg-black select-none pointer-events-none will-change-transform"
       >
         {/* Logo Putih yang perlahan terisi Merah dari Bawah */}
-        <div className="relative w-[min(38vw,420px)] min-w-[220px] aspect-[1217/431]">
+        <div
+          ref={logoRef}
+          className="relative w-[min(38vw,420px)] min-w-[220px] aspect-[1217/431]"
+        >
           {/* Logo Putih (Dasar) */}
           <div
             className="absolute inset-0 h-full w-full bg-white opacity-85"
@@ -257,7 +309,7 @@ export default function Hero() {
       <CtaButton />
 
       {/* Canvas Three.js — ornamen 3D di depan foto siluet */}
-      <OrnamentScene anchorRef={anchorRef} />
+      {showOrnament && <OrnamentScene anchorRef={anchorRef} />}
     </section>
   );
 }

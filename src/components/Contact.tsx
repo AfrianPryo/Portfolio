@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, type CSSProperties, type FormEvent } from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -8,674 +8,394 @@ import RunningTextSection from "@/components/RunningTextSection";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-const FIRST_LINE = "LET'S CREATE SOMETHING";
-const SECOND_LINE = "TOGETHER.";
 const MAIL_TO = "annosulistyanno@gmail.com";
 
-const CARD_REST_ROTATION = -3;
+// Aset background (grain merah + figur jatuh + bintang) dari desain.
+// Simpan sebagai public/contact-bg.webp
+const BG_SRC = "/contact-bg.webp";
+
+// Satuan blur per karakter (dalam em), supaya blur ikut skala ukuran font.
+const BLUR_STEP = 0.012;
+
+// Tambahan blur (em) saat karakter masuk/keluar -> efek motion blur.
+const MOTION_BLUR = 0.2;
+
+type HeadingWord = {
+  text: string;
+  /** Tingkat blur tiap karakter (0 = tajam). Panjangnya = jumlah karakter. */
+  blur: number[];
+  /** Posisi di desktop (absolute di dalam heading). Di mobile mengalir biasa. */
+  pos: string;
+  /** Arah masuk kata: -1 dari kiri, 1 dari kanan, 0 hanya dari bawah. */
+  dir: -1 | 0 | 1;
+};
+
+// Heading di desain: 2 baris, kata-kata tersebar, makin ke tengah/ujung makin blur.
+const HEADING: HeadingWord[] = [
+  {
+    text: "WORK WITH",
+    blur: [0, 0, 1, 3, 0, 5, 5, 5, 5],
+    pos: "lg:absolute lg:left-0 lg:top-0",
+    dir: -1,
+  },
+  {
+    text: "AND",
+    blur: [2, 4, 4],
+    pos: "lg:absolute lg:left-[44.3%] lg:top-0",
+    dir: 0,
+  },
+  {
+    text: "MAKE",
+    blur: [4, 2, 0, 0],
+    pos: "lg:absolute lg:right-0 lg:top-0",
+    dir: 1,
+  },
+  {
+    text: "ME",
+    blur: [0, 0],
+    pos: "lg:absolute lg:left-0 lg:top-[0.95em]",
+    dir: -1,
+  },
+  {
+    text: "SOMETHING",
+    blur: [0, 0, 0, 1, 2, 4, 6, 7, 9],
+    pos: "lg:absolute lg:right-0 lg:top-[0.95em]",
+    dir: 1,
+  },
+];
+
+type InfoItem = {
+  lines: [string, string];
+  style: CSSProperties; // hanya berlaku di desktop (di mobile posisinya static)
+  align?: "right";
+};
+
+// Teks kecil di tengah desain (placeholder dari desain, ganti dengan isi asli).
+const INFO: InfoItem[] = [
+  { lines: ["contact me", "lorem ipsum dolor"], style: { left: "2%", top: "47.8%" } },
+  { lines: ["contact me", "lorem ipsum dolor"], style: { left: "2%", top: "51.8%" } },
+  { lines: ["contact me", "for"], style: { left: "13.3%", top: "47.8%" } },
+  { lines: ["contact me", "lorem ipsum dolor sit amet"], style: { left: "13.3%", top: "51.8%" } },
+  { lines: ["contact me", "lorem"], style: { left: "31.7%", top: "47.8%" } },
+  { lines: ["contact me", "lorem ipsum dolor"], style: { right: "17.5%", top: "48.4%" }, align: "right" },
+  { lines: ["contact me", "lorem ipsum dolor"], style: { right: "17.5%", top: "52.4%" }, align: "right" },
+  { lines: ["contact me", "for"], style: { right: "3%", top: "48.4%" }, align: "right" },
+  { lines: ["contact me", "lorem ipsum dolor sit amet"], style: { right: "3%", top: "52.4%" }, align: "right" },
+];
+
+const charBlur = (el: Element) => Number((el as HTMLElement).dataset.blur ?? 0);
 
 export default function Contact() {
   const root = useRef<HTMLElement>(null);
-  const firstInput = useRef<HTMLInputElement>(null);
-  const cardMounted = useRef(false);
-  const [open, setOpen] = useState(false);
 
   useGSAP(
     () => {
       const mm = gsap.matchMedia();
 
-      mm.add("(prefers-reduced-motion: reduce)", () => {
-        gsap.set(
-          [
-            "[data-contact-char]",
-            "[data-contact-ornament]",
-            "[data-contact-bg]",
-            "[data-contact-piece]",
-          ],
+      mm.add("(prefers-reduced-motion: no-preference)", () => {
+        // Wrapper background diperbesar sedikit supaya parallax tidak membuka tepi.
+        gsap.set("[data-bg-parallax]", { scale: 1.14, force3D: true });
+
+        // ===== Parallax halus background mengikuti scroll (transform saja, ringan) =====
+        gsap.fromTo(
+          "[data-bg-parallax]",
+          { yPercent: -5 },
           {
-            autoAlpha: 1,
-            x: 0,
-            y: 0,
-            scale: 1,
+            yPercent: 5,
+            ease: "none",
+            scrollTrigger: {
+              trigger: root.current,
+              start: "top bottom",
+              end: "bottom top",
+              scrub: 1.2,
+            },
           }
         );
-      });
 
-      mm.add("(prefers-reduced-motion: no-preference)", () => {
-        const cleanups: Array<() => void> = [];
-
-        // Cincin berputar terus; terpisah dari animasi muncul (beda elemen)
-        // supaya rotation dan scale tidak saling timpa.
-        const spin = gsap.to("[data-contact-spin]", {
-          rotation: 360,
-          duration: 18,
-          ease: "none",
-          repeat: -1,
+        // ===== ENTRANCE =====
+        const inTl = gsap.timeline({
           paused: true,
+          defaults: { ease: "power3.out", force3D: true },
         });
+
+        inTl
+          // Bingkai: fade + scale lembut (tanpa clip-path/filter yang berat di repaint).
+          .fromTo(
+            "[data-frame]",
+            { autoAlpha: 0, scale: 0.95, transformOrigin: "50% 50%" },
+            { autoAlpha: 1, scale: 1, duration: 1.8, ease: "power3.out" },
+            0
+          )
+          // Background: hanya opacity + scale pelan (murni GPU, tanpa blur) -> mulus.
+          .fromTo(
+            "[data-bg]",
+            { autoAlpha: 0, scale: 1.12 },
+            { autoAlpha: 1, scale: 1, duration: 3, ease: "power2.out" },
+            0
+          )
+          // Kata heading menyapu masuk dari sisinya.
+          .fromTo(
+            "[data-word]",
+            { xPercent: (_i, el) => Number((el as HTMLElement).dataset.dir) * -10 },
+            { xPercent: 0, duration: 1.7, ease: "expo.out", stagger: 0.08 },
+            0.4
+          )
+          // Karakter: motion blur mengendap ke blur desain.
+          .fromTo(
+            "[data-char]",
+            {
+              autoAlpha: 0,
+              yPercent: 55,
+              scaleY: 1.45,
+              transformOrigin: "50% 100%",
+              filter: (_i, el) => `blur(${charBlur(el) + MOTION_BLUR}em)`,
+            },
+            {
+              autoAlpha: 1,
+              yPercent: 0,
+              scaleY: 1,
+              filter: (_i, el) => `blur(${charBlur(el)}em)`,
+              duration: 1.2,
+              stagger: { each: 0.028, from: "start" },
+            },
+            0.45
+          )
+          // Teks kecil.
+          .fromTo(
+            "[data-info]",
+            { autoAlpha: 0, y: 10, filter: "blur(5px)" },
+            {
+              autoAlpha: 1,
+              y: 0,
+              filter: "blur(0px)",
+              duration: 0.9,
+              ease: "power2.out",
+              stagger: 0.06,
+              clearProps: "filter",
+            },
+            1.2
+          )
+          // Form & logo paling akhir.
+          .fromTo(
+            "[data-foot]",
+            { autoAlpha: 0, y: 14, filter: "blur(6px)" },
+            {
+              autoAlpha: 1,
+              y: 0,
+              filter: "blur(0px)",
+              duration: 0.9,
+              ease: "power2.out",
+              stagger: 0.12,
+              clearProps: "filter",
+            },
+            1.5
+          );
+
+        // ===== EXIT =====
+        const outTl = gsap.timeline({
+          paused: true,
+          defaults: { ease: "power2.in", force3D: true },
+        });
+
+        outTl
+          // Form & teks kecil lebih dulu menghilang.
+          .to(
+            "[data-foot]",
+            { autoAlpha: 0, y: -10, filter: "blur(6px)", duration: 0.5, stagger: 0.05 },
+            0
+          )
+          .to(
+            "[data-info]",
+            { autoAlpha: 0, y: -8, filter: "blur(5px)", duration: 0.5, stagger: 0.02 },
+            0
+          )
+          // Kata menyebar keluar ke sisinya.
+          .to(
+            "[data-word]",
+            {
+              xPercent: (_i, el) => Number((el as HTMLElement).dataset.dir) * 8,
+              duration: 1.1,
+              ease: "power2.inOut",
+              stagger: 0.05,
+            },
+            0.05
+          )
+          // Karakter: motion blur ke atas lalu hilang.
+          .to(
+            "[data-char]",
+            {
+              autoAlpha: 0,
+              yPercent: -50,
+              scaleY: 1.4,
+              transformOrigin: "50% 0%",
+              filter: (_i, el) => `blur(${charBlur(el) + MOTION_BLUR}em)`,
+              duration: 0.75,
+              stagger: { each: 0.018, from: "start" },
+            },
+            0.05
+          )
+          // Background & bingkai memudar halus di akhir.
+          .to(
+            "[data-bg]",
+            { autoAlpha: 0, scale: 1.06, duration: 1.3, ease: "power2.inOut" },
+            0.2
+          )
+          .to(
+            "[data-frame]",
+            { autoAlpha: 0, scale: 0.97, duration: 1.1, ease: "power2.inOut" },
+            0.35
+          );
+
+        const playIn = () => {
+          outTl.pause();
+          inTl.restart();
+        };
+        const playOut = () => {
+          inTl.pause();
+          outTl.invalidate().restart();
+        };
+
         ScrollTrigger.create({
           trigger: root.current,
-          start: "top bottom",
-          end: "bottom top",
-          onToggle: (self) => (self.isActive ? spin.play() : spin.pause()),
+          start: "top 75%",
+          end: "bottom 30%",
+          onEnter: playIn,
+          onEnterBack: playIn,
+          onLeave: playOut,
+          onLeaveBack: playOut,
         });
-
-        const timeline = gsap.timeline({
-          scrollTrigger: {
-            trigger: root.current,
-            start: "top 85%", // mulai lebih cepat saat section baru masuk layar
-            toggleActions: "play none none reverse",
-          },
-        });
-
-        // Ornamen latar kiri/kanan: meluncur masuk dari sisi layar sambil fade in.
-        // Posisi 0 = mulai bersamaan dengan heading.
-        timeline.fromTo(
-          "[data-contact-bg='left']",
-          { autoAlpha: 0, x: -80 },
-          { autoAlpha: 1, x: 0, duration: 1, ease: "power3.out" },
-          0
-        );
-        timeline.fromTo(
-          "[data-contact-bg='right']",
-          { autoAlpha: 0, x: 80 },
-          { autoAlpha: 1, x: 0, duration: 1, ease: "power3.out" },
-          0
-        );
-
-        // ===== Kemunculan teks & ornamen: cepat dan glitchy (tanpa bounce) =====
-        // Tiap elemen berkedip (opacity naik-turun) sambil bergeser/miring
-        // acak beberapa frame, lalu "terkunci" di posisi akhirnya.
-        const rand = gsap.utils.random;
-        const glitchTo = (target: Element, at: number, amp = 1) => {
-          timeline.to(
-            target,
-            {
-              keyframes: [
-                {
-                  autoAlpha: 1,
-                  x: rand(-12, 12) * amp,
-                  skewX: rand(-30, 30) * amp,
-                  duration: 0.04,
-                },
-                {
-                  autoAlpha: 0.1,
-                  x: rand(-8, 8) * amp,
-                  skewX: rand(-20, 20) * amp,
-                  duration: 0.04,
-                },
-                {
-                  autoAlpha: 1,
-                  x: rand(-5, 5) * amp,
-                  skewX: 0,
-                  duration: 0.04,
-                },
-                { autoAlpha: 0.4, x: rand(-3, 3) * amp, duration: 0.03 },
-                { autoAlpha: 1, x: 0, skewX: 0, duration: 0.05 },
-              ],
-              ease: "none",
-            },
-            at
-          );
-        };
-        const glitchChars = (line: 1 | 2, at: number, spread: number) => {
-          const chars = gsap.utils.toArray<HTMLElement>(
-            `[data-contact-char='${line}']`,
-            root.current
-          );
-          const order = gsap.utils.shuffle(chars.map((_, i) => i));
-
-          chars.forEach((el, i) => {
-            glitchTo(
-              el,
-              at + (order[i] / Math.max(chars.length - 1, 1)) * spread
-            );
-          });
-        };
-
-        // Semua elemen disembunyikan dulu; kemunculannya diatur lewat glitchTo.
-        gsap.set(
-          [
-            "[data-contact-char]",
-            "[data-contact-ornament]",
-            "[data-contact-piece]",
-          ],
-          { autoAlpha: 0 }
-        );
-
-        // Baris 1: karakter muncul ACAK dan cepat, langsung di detik 0.
-        glitchChars(1, 0, 0.28);
-
-        // Ornamen 3D: mulai saat baris 1 masih berjalan.
-        glitchTo(
-          gsap.utils.toArray<HTMLElement>(
-            "[data-contact-ornament]",
-            root.current
-          )[0],
-          0.22,
-          1.4
-        );
-
-        // "TOGETHER." juga acak, tumpang tindih dengan ornamen.
-        glitchChars(2, 0.3, 0.18);
-
-        // Cincin -> teks CONTACT ME: muncul berurutan, cepat.
-        gsap.utils
-          .toArray<HTMLElement>("[data-contact-piece]", root.current)
-          .forEach((piece, index) => {
-            glitchTo(piece, 0.4 + index * 0.08, 1.2);
-          });
-
-        const section = root.current;
-        const hasFinePointer = window.matchMedia("(pointer: fine)").matches;
-
-        // ===== Parallax ornamen (meniru OrnamentScene di Hero) =====
-        const ornament = section?.querySelector<HTMLElement>(
-          "[data-contact-parallax]"
-        );
-        if (section && ornament && hasFinePointer) {
-          gsap.set(ornament, {
-            transformPerspective: 1600,
-            transformOrigin: "50% 50%",
-          });
-
-          const ROT_MAX = 0.55 * (180 / Math.PI);
-
-          const rotX = gsap.quickTo(ornament, "rotationX", {
-            duration: 0.9,
-            ease: "power3.out",
-          });
-          const rotY = gsap.quickTo(ornament, "rotationY", {
-            duration: 0.9,
-            ease: "power3.out",
-          });
-          const ox = gsap.quickTo(ornament, "x", {
-            duration: 1.2,
-            ease: "power3.out",
-          });
-          const oy = gsap.quickTo(ornament, "y", {
-            duration: 1.2,
-            ease: "power3.out",
-          });
-
-          const onMove = (e: PointerEvent) => {
-            const rect = section.getBoundingClientRect();
-            if (!rect.width || !rect.height) return;
-            const nx = (e.clientX - rect.left) / rect.width - 0.5;
-            const ny = (e.clientY - rect.top) / rect.height - 0.5;
-
-            rotX(-ny * ROT_MAX);
-            rotY(nx * ROT_MAX);
-            ox(nx * 36);
-            oy(ny * 22);
-          };
-          const onLeave = () => {
-            rotX(0);
-            rotY(0);
-            ox(0);
-            oy(0);
-          };
-
-          section.addEventListener("pointermove", onMove);
-          section.addEventListener("pointerleave", onLeave);
-          cleanups.push(() => {
-            section.removeEventListener("pointermove", onMove);
-            section.removeEventListener("pointerleave", onLeave);
-          });
-        }
-
-        // ===== Parallax halus ornamen latar (bergerak berlawanan arah kursor) =====
-        const bgImgs = section
-          ? gsap.utils.toArray<HTMLElement>("[data-contact-bg-img]", section)
-          : [];
-        if (section && bgImgs.length && hasFinePointer) {
-          const bgMoves = bgImgs.map((el) => ({
-            x: gsap.quickTo(el, "x", { duration: 1.2, ease: "power3.out" }),
-            y: gsap.quickTo(el, "y", { duration: 1.2, ease: "power3.out" }),
-          }));
-          const onBgMove = (e: PointerEvent) => {
-            const rect = section.getBoundingClientRect();
-            if (!rect.width || !rect.height) return;
-            const nx = (e.clientX - rect.left) / rect.width - 0.5;
-            const ny = (e.clientY - rect.top) / rect.height - 0.5;
-            bgMoves.forEach((m) => {
-              m.x(nx * -28);
-              m.y(ny * -18);
-            });
-          };
-          const onBgLeave = () =>
-            bgMoves.forEach((m) => {
-              m.x(0);
-              m.y(0);
-            });
-          section.addEventListener("pointermove", onBgMove);
-          section.addEventListener("pointerleave", onBgLeave);
-          cleanups.push(() => {
-            section.removeEventListener("pointermove", onBgMove);
-            section.removeEventListener("pointerleave", onBgLeave);
-          });
-        }
-
-        // ===== Hover ornamen lingkaran (cincin + CONTACT ME) =====
-        const magnet = section?.querySelector<HTMLElement>(
-          "[data-contact-magnet]"
-        );
-        const ringImg = section?.querySelector<HTMLElement>(
-          "[data-contact-spin]"
-        );
-        const label = section?.querySelector<HTMLElement>(
-          "[data-contact-label]"
-        );
-        if (magnet && ringImg && label && hasFinePointer) {
-          const mx = gsap.quickTo(magnet, "x", {
-            duration: 0.6,
-            ease: "power3.out",
-          });
-          const my = gsap.quickTo(magnet, "y", {
-            duration: 0.6,
-            ease: "power3.out",
-          });
-
-          const MAGNET_STRENGTH = 0.18;
-
-          const onEnter = () => {
-            gsap.to(spin, {
-              timeScale: 4,
-              duration: 0.8,
-              ease: "power2.out",
-              overwrite: "auto",
-            });
-            gsap.to(ringImg, {
-              filter: "brightness(1.4)",
-              duration: 0.4,
-              ease: "power2.out",
-              overwrite: "auto",
-            });
-            gsap.to(label, {
-              opacity: 1,
-              filter: "brightness(1.3)",
-              duration: 0.4,
-              ease: "power3.out",
-              overwrite: "auto",
-            });
-          };
-
-          const onMagnetMove = (e: PointerEvent) => {
-            const rect = magnet.getBoundingClientRect();
-            const curX = Number(gsap.getProperty(magnet, "x")) || 0;
-            const curY = Number(gsap.getProperty(magnet, "y")) || 0;
-            const cx = rect.left - curX + rect.width / 2;
-            const cy = rect.top - curY + rect.height / 2;
-            mx((e.clientX - cx) * MAGNET_STRENGTH);
-            my((e.clientY - cy) * MAGNET_STRENGTH);
-          };
-
-          const onExit = () => {
-            mx(0);
-            my(0);
-            gsap.to(spin, {
-              timeScale: 1,
-              duration: 1,
-              ease: "power2.out",
-              overwrite: "auto",
-            });
-            gsap.to(ringImg, {
-              filter: "brightness(1)",
-              duration: 0.5,
-              ease: "power2.out",
-              overwrite: "auto",
-            });
-            gsap.to(label, {
-              opacity: 0.7,
-              filter: "brightness(1)",
-              duration: 0.4,
-              ease: "power3.out",
-              overwrite: "auto",
-            });
-          };
-
-          gsap.set(label, { opacity: 0.7, filter: "brightness(1)" });
-          gsap.set(ringImg, { filter: "brightness(1)" });
-
-          magnet.addEventListener("pointerenter", onEnter);
-          magnet.addEventListener("pointermove", onMagnetMove);
-          magnet.addEventListener("pointerleave", onExit);
-          cleanups.push(() => {
-            magnet.removeEventListener("pointerenter", onEnter);
-            magnet.removeEventListener("pointermove", onMagnetMove);
-            magnet.removeEventListener("pointerleave", onExit);
-          });
-        }
-
-        return () => {
-          cleanups.forEach((fn) => fn());
-        };
       });
     },
     { scope: root }
   );
 
-  // ===== Card mail: buka/tutup saat CONTACT ME diklik =====
-  // Card meluncur dari kiri sambil sedikit berputar sampai miring -3° (seperti desain),
-  // lalu field-nya muncul berurutan. Dipisah dari useGSAP di atas supaya
-  // tidak ikut ter-revert saat state `open` berubah.
-  useGSAP(
-    () => {
-      const card = root.current?.querySelector<HTMLElement>("[data-mail-card]");
-      if (!card) return;
-      const fields = gsap.utils.toArray<HTMLElement>("[data-mail-field]", card);
-      const reduce = window.matchMedia(
-        "(prefers-reduced-motion: reduce)"
-      ).matches;
-
-      // Render pertama: sembunyikan card tanpa animasi.
-      if (!cardMounted.current) {
-        cardMounted.current = true;
-        gsap.set(card, {
-          autoAlpha: 0,
-          x: -120,
-          rotation: CARD_REST_ROTATION,
-        });
-        return;
-      }
-
-      gsap.killTweensOf([card, ...fields]);
-
-      if (open) {
-        if (reduce) {
-          gsap.set(card, { autoAlpha: 1, x: 0, rotation: CARD_REST_ROTATION });
-          gsap.set(fields, { autoAlpha: 1, y: 0 });
-        } else {
-          gsap.fromTo(
-            card,
-            { autoAlpha: 0, x: -140, rotation: CARD_REST_ROTATION - 8, scale: 0.94 },
-            {
-              autoAlpha: 1,
-              x: 0,
-              rotation: CARD_REST_ROTATION,
-              scale: 1,
-              duration: 0.9,
-              ease: "power3.out",
-            }
-          );
-          gsap.fromTo(
-            fields,
-            { autoAlpha: 0, y: 18 },
-            {
-              autoAlpha: 1,
-              y: 0,
-              duration: 0.6,
-              stagger: 0.08,
-              delay: 0.25,
-              ease: "power3.out",
-            }
-          );
-        }
-        firstInput.current?.focus({ preventScroll: true });
-      } else if (reduce) {
-        gsap.set(card, { autoAlpha: 0 });
-      } else {
-        gsap.to(card, {
-          autoAlpha: 0,
-          x: -100,
-          rotation: CARD_REST_ROTATION - 6,
-          duration: 0.5,
-          ease: "power3.in",
-        });
-      }
-    },
-    { scope: root, dependencies: [open] }
-  );
-
-  // Tekan Esc untuk menutup card.
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
+  // Tanpa backend: buka aplikasi email user dengan isi yang sudah terisi.
+  // Ganti dengan fetch("/api/contact", ...) kalau sudah punya endpoint.
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const data = new FormData(e.currentTarget);
-    const name = String(data.get("name") ?? "").trim();
     const email = String(data.get("email") ?? "").trim();
-    const message = String(data.get("message") ?? "").trim();
+    if (!email) return;
 
-    // Tanpa backend: buka aplikasi email user dengan isi yang sudah terisi.
-    // Ganti bagian ini dengan fetch("/api/contact", ...) kalau sudah punya endpoint.
-    const subject = `Pesan dari ${name || "website"}`;
-    const body = `${message}\n\n— ${name}\n${email}`;
+    const body = `Halo, saya ingin bekerja sama.\n\nHubungi saya di: ${email}`;
     window.location.href = `mailto:${MAIL_TO}?subject=${encodeURIComponent(
-      subject
+      "Ajakan kolaborasi dari website"
     )}&body=${encodeURIComponent(body)}`;
 
     e.currentTarget.reset();
-    setOpen(false);
   };
-
-  const renderCharacters = (text: string, line: 1 | 2) =>
-    Array.from(text).map((char, index) => (
-      <span
-        key={`${char}-${index}`}
-        data-contact-char={line}
-        aria-hidden="true"
-        className="inline-block origin-center will-change-transform"
-      >
-        {char === " " ? "\u00a0" : char}
-      </span>
-    ));
-
-  const fieldClass =
-    "w-full border-0 border-b border-[#1a0000]/80 bg-transparent pb-[1.2cqw] pt-[3cqw] font-switzer text-[3.6cqw] max-lg:text-[max(16px,3.6cqw)] normal-case tracking-[0.02em] text-[#1a0000] outline-none placeholder:text-[3.2cqw] max-lg:placeholder:text-[max(13px,3.2cqw)] placeholder:uppercase placeholder:tracking-[0.06em] placeholder:text-[#1a0000]/75 focus:border-b-2 focus:border-[#1a0000]";
 
   return (
     <>
-    <section
-      ref={root}
-      id="contact"
-      className="relative flex min-h-[620px] max-lg:min-h-[720px] w-full flex-col items-center justify-center overflow-hidden bg-[#080000] px-[5vw] py-[clamp(80px,12vh,150px)] text-flame"
-      aria-labelledby="contact-heading"
-    >
-      {/* Ornamen latar kiri & kanan (webp, merah gelap). Posisi vertikal sejajar area cincin. */}
-      <div
-        data-contact-bg="left"
-        aria-hidden="true"
-        className="pointer-events-none absolute -left-[4vw] top-[63%] max-lg:top-[66%] z-0 w-[36vw] max-lg:w-[44vw] max-w-[640px] -translate-y-1/2"
+      <section
+        ref={root}
+        id="contact"
+        aria-labelledby="contact-heading"
+        className="w-full bg-[#080000] px-[2vw]"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          data-contact-bg-img
-          src="/contact-ornament-left.webp"
-          alt=""
-          width={664}
-          height={341}
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          className="block h-auto w-full select-none will-change-transform"
-        />
-      </div>
       <div
-        data-contact-bg="right"
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-[4vw] top-[63%] max-lg:top-[66%] z-0 w-[36vw] max-lg:w-[44vw] max-w-[640px] -translate-y-1/2"
+        data-frame
+        className="relative isolate flex w-full flex-col justify-between gap-10 overflow-hidden bg-[#e00000] text-white will-change-transform max-lg:min-h-[680px] max-lg:px-[6vw] max-lg:py-[10vw] lg:block lg:aspect-[1366/803]"
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          data-contact-bg-img
-          src="/contact-ornament-right.webp"
-          alt=""
-          width={663}
-          height={340}
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          className="block h-auto w-full select-none will-change-transform"
-        />
-      </div>
-
-      <div className="relative z-10 mx-auto flex w-full max-w-[1360px] flex-col items-center text-center">
-        <h2
-          id="contact-heading"
-          className="font-switzer text-[clamp(27px,7.4vw,104px)] font-semibold italic leading-[0.88] tracking-[-0.075em]"
-        >
-          <span className="block whitespace-nowrap">
-            <span className="sr-only">{FIRST_LINE}</span>
-            {renderCharacters(FIRST_LINE, 1)}
-          </span>
-
-          {/* Baris 2: ornamen di kiri, "TOGETHER." di kanan, satu garis tengah */}
-          <span className="mt-[0.12em] flex items-center justify-center gap-[0.4em] whitespace-nowrap font-acerok text-[1.04em] font-normal not-italic leading-[0.9] tracking-[-0.025em]">
-            <span
-              data-contact-ornament
-              aria-hidden="true"
-              className="relative top-[0.05em] block w-[2.5em] shrink-0"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                data-contact-parallax
-                src="/ornament.svg"
-                alt=""
-                width={1217}
-                height={431}
-                loading="lazy"
-                decoding="async"
-                draggable={false}
-                className="block h-auto w-full select-none will-change-transform"
-              />
-            </span>
-            <span>
-              <span className="sr-only">{SECOND_LINE}</span>
-              {renderCharacters(SECOND_LINE, 2)}
-            </span>
-          </span>
-        </h2>
-
-        <div className="mt-[clamp(10px,2vw,32px)]">
-          {/* data-contact-magnet: wrapper yang tertarik ke kursor saat hover */}
-          <div
-            data-contact-magnet
-            className="relative flex aspect-square w-[clamp(150px,22vw,312px)] items-center justify-center will-change-transform"
-          >
-            {/* Pembungkus ini yang muncul (scale/opacity); gambar di dalamnya yang berputar */}
-            <div
-              data-contact-piece
-              aria-hidden="true"
-              className="absolute inset-0 will-change-transform"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                data-contact-spin
-                src="/cursorFollowing.svg"
-                alt=""
-                loading="lazy"
-                decoding="async"
-                draggable={false}
-                className="h-full w-full select-none will-change-transform"
-              />
-            </div>
-
-            <button
-              type="button"
-              data-contact-piece
-              onClick={() => setOpen((v) => !v)}
-              aria-expanded={open}
-              aria-controls="contact-mail-card"
-              aria-label="Buka formulir kontak"
-              className="relative z-10 flex aspect-square w-[58%] cursor-pointer flex-col items-center justify-center rounded-full text-center font-acerok text-[clamp(11px,1.65vw,20px)] leading-[1.2] tracking-[0.04em] text-flame/70 transition-colors duration-300 hover:text-flame focus-visible:text-flame focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-flame"
-            >
-              <span data-contact-label className="block will-change-transform">
-                <span className="block">CONTACT</span>
-                <span className="block">ME</span>
-              </span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ===== Card mail (muncul di kiri saat CONTACT ME diklik) =====
-          Wrapper = posisi (CSS). Elemen [data-mail-card] = yang dianimasikan GSAP. */}
-      <div className="pointer-events-none contents max-lg:absolute max-lg:inset-0 max-lg:z-30 max-lg:flex max-lg:items-center max-lg:justify-center">
-      <div className="pointer-events-none absolute -left-[3vw] top-1/2 z-30 aspect-[0.72] h-[88%] max-h-[760px] max-w-[94vw] -translate-y-1/2 max-lg:static max-lg:h-auto max-lg:max-h-none max-lg:w-[min(88vw,420px)] max-lg:max-w-none max-lg:translate-y-0">
+        {/* Background: grain merah + figur + bintang (sudah menyatu di aset).
+            Wrapper = parallax scroll, img = animasi entrance/exit (dipisah agar transform tidak bentrok). */}
         <div
-          id="contact-mail-card"
-          data-mail-card
-          role="dialog"
-          aria-label="Kirim pesan"
-          className="pointer-events-auto invisible relative h-full w-full will-change-transform [container-type:inline-size]"
+          data-bg-parallax
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 -z-10 will-change-transform"
         >
-          {/* Background kertas merah (webp 800px ≈ 80KB) */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/mail-bg.webp"
+            data-bg
+            src={BG_SRC}
             alt=""
-            width={800}
-            height={870}
             loading="lazy"
             decoding="async"
             draggable={false}
-            className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover object-[85%_top] shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+            className="h-full w-full select-none object-cover object-center"
           />
+        </div>
 
-          <form
-            onSubmit={handleSubmit}
-            className="relative flex h-full w-full flex-col pl-[15cqw] pr-[9cqw] pb-[8cqw] pt-[7cqw] text-[#1a0000] max-lg:overflow-y-auto"
-          >
-            <button
-              type="button"
-              data-mail-field
-              onClick={() => setOpen(false)}
-              className="self-start font-acerok text-[3.2cqw] max-lg:text-[max(12px,3.2cqw)] uppercase tracking-[0.12em] text-[#1a0000]/80 transition-colors hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1a0000]"
+        {/* Heading */}
+        <h2
+          id="contact-heading"
+          className="relative z-10 font-acerok text-[10vw] font-normal uppercase leading-[0.92] tracking-[-0.07em] max-lg:flex max-lg:flex-wrap max-lg:gap-x-[0.28em] lg:absolute lg:inset-x-[2%] lg:top-[3%] lg:text-[6.8vw]"
+        >
+          <span className="sr-only">Work with me and make something</span>
+          {HEADING.map((word) => (
+            <span
+              key={word.text}
+              aria-hidden="true"
+              data-word
+              data-dir={word.dir}
+              className={`block whitespace-nowrap ${word.pos}`}
             >
-              Back
-            </button>
+              {Array.from(word.text).map((char, i) => {
+                const blur = (word.blur[i] ?? 0) * BLUR_STEP;
+                return (
+                  <span
+                    key={`${char}-${i}`}
+                    data-char
+                    data-blur={blur}
+                    className="inline-block"
+                    style={blur ? { filter: `blur(${blur}em)` } : undefined}
+                  >
+                    {char === " " ? "\u00a0" : char}
+                  </span>
+                );
+              })}
+            </span>
+          ))}
+        </h2>
 
-            <div className="mt-[9cqw] flex flex-col gap-[4.5cqw]">
-              <input
-                ref={firstInput}
-                data-mail-field
-                name="name"
-                type="text"
-                required
-                autoComplete="name"
-                placeholder="Your name"
-                aria-label="Nama kamu"
-                className={fieldClass}
-              />
-              <input
-                data-mail-field
-                name="email"
-                type="email"
-                required
-                autoComplete="email"
-                placeholder="Your email"
-                aria-label="Email kamu"
-                className={fieldClass}
-              />
-            </div>
+        {/* Teks kecil di tengah */}
+        <div className="relative z-10 max-lg:grid max-lg:grid-cols-2 max-lg:gap-x-4 max-lg:gap-y-4 lg:contents">
+          {INFO.map((item, i) => (
+            <p
+              key={i}
+              data-info
+              style={item.style}
+              className={`font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] lg:absolute lg:z-10 lg:whitespace-nowrap lg:text-[0.72vw] ${
+                item.align === "right" ? "lg:text-right" : ""
+              }`}
+            >
+              <span className="block">{item.lines[0]}</span>
+              <span className="block">{item.lines[1]}</span>
+            </p>
+          ))}
+        </div>
 
-            {/* Ruang kosong seperti di desain; kolom pesan menempel di bawahnya */}
-            <textarea
-              data-mail-field
-              name="message"
+        {/* Form kiri bawah */}
+        <form
+          onSubmit={handleSubmit}
+          data-foot
+          className="relative z-10 flex flex-col gap-1 max-lg:w-full max-lg:max-w-[420px] lg:absolute lg:bottom-[3.6%] lg:left-[2%] lg:gap-[0.25vw]"
+        >
+          <label
+            htmlFor="contact-email"
+            className="font-switzer text-[11px] lowercase leading-none tracking-[-0.05em] lg:text-[0.65vw]"
+          >
+            your email
+          </label>
+          <div className="flex">
+            <input
+              id="contact-email"
+              name="email"
+              type="email"
               required
-              rows={3}
-              placeholder="Type concern here"
-              aria-label="Pesan kamu"
-              className={`${fieldClass} mt-auto resize-none max-lg:min-h-[28cqw] max-lg:shrink-0`}
+              autoComplete="email"
+              inputMode="email"
+              className="h-11 min-w-0 flex-1 border border-white/80 bg-transparent px-3 font-switzer text-base text-white outline-none focus:bg-white/10 lg:h-[1.82vw] lg:w-[14.6vw] lg:flex-none lg:px-[0.5vw] lg:text-[0.8vw]"
             />
-
             <button
               type="submit"
-              data-mail-field
-              className="group mt-[7cqw] flex items-center gap-[2.5cqw] self-end font-acerok text-[13cqw] font-normal uppercase leading-none tracking-[-0.02em] text-[#1a0000]/85 transition-colors hover:text-black max-lg:shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#1a0000]"
+              className="group flex h-11 items-center bg-white px-4 font-switzer text-base lowercase tracking-[-0.05em] text-[#e00000] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[1.82vw] lg:px-[0.6vw] lg:text-[0.8vw]"
             >
+              submit
+              {/* Icon plus: muncul di sisi kanan saat hover/focus */}
               <span
                 aria-hidden="true"
-                className="block h-[6cqw] w-[6cqw] shrink-0 bg-current transition-transform duration-500 group-hover:rotate-90"
+                className="ml-0 block h-[10px] w-0 shrink-0 bg-current opacity-0 transition-all duration-300 group-hover:ml-1 group-hover:w-[10px] group-hover:opacity-100 group-focus-visible:ml-1 group-focus-visible:w-[10px] group-focus-visible:opacity-100 lg:h-[0.6vw] lg:group-hover:ml-[0.25vw] lg:group-hover:w-[0.6vw] lg:group-focus-visible:ml-[0.25vw] lg:group-focus-visible:w-[0.6vw]"
                 style={{
                   WebkitMaskImage: "url(/icon-custom/Plus.svg)",
                   maskImage: "url(/icon-custom/Plus.svg)",
@@ -687,14 +407,24 @@ export default function Contact() {
                   maskSize: "contain",
                 }}
               />
-              Submit
             </button>
-          </form>
-        </div>
+          </div>
+        </form>
+
+        {/* Logo kanan bawah */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          data-foot
+          src="/ornament.svg"
+          alt=""
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          className="pointer-events-none relative z-10 select-none brightness-0 invert max-lg:w-[22vw] max-lg:self-end lg:absolute lg:bottom-[4.7%] lg:right-[2.3%] lg:w-[6.1%]"
+        />
       </div>
-      </div>
-    </section>
-    <RunningTextSection />
+      </section>
+      <RunningTextSection />
     </>
   );
 }

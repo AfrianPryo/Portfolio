@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 
 const NUM_STRIPS = 9;
 
@@ -16,6 +16,61 @@ const STRIP_CONFIGS = [
   { rotY:  7.0, z: -2.0, shadow: "rgba(0,0,0,0.14)" },
   { rotY:  9.5, z: -3.8, shadow: "rgba(0,0,0,0.26)" },
 ];
+
+// 9 strip statis: hanya bergantung pada isHovered. Dipisah + memo supaya setiap
+// gerakan mouse (update tilt/shine) tidak ikut me-render ulang 9 <img> ini.
+const TicketStrips = memo(function TicketStrips({
+  isHovered,
+}: {
+  isHovered: boolean;
+}) {
+  return (
+    <>
+    {STRIP_CONFIGS.map((config, i) => {
+      const rotY = isHovered ? config.rotY : 0;
+      const z = isHovered ? config.z : 0;
+
+      return (
+        <div
+          key={i}
+          className="relative h-full overflow-hidden [transform-style:preserve-3d] transition-transform duration-600 ease-[cubic-bezier(0.2,0.9,0.25,1)]"
+          style={{
+            width: `calc(100% / ${NUM_STRIPS} + 0.5px)`,
+            marginRight: i === NUM_STRIPS - 1 ? 0 : "-0.5px",
+            transform: `rotateY(${rotY}deg) translateZ(${z}px)`,
+            transformOrigin: i < 4 ? "right center" : i > 4 ? "left center" : "center center",
+          }}
+        >
+          {/* Potongan gambar tiket */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/resume-ticket.webp"
+            alt="Download Resume"
+            draggable={false}
+            className="pointer-events-none absolute top-0 max-w-none select-none"
+            style={{
+              width: `${NUM_STRIPS * 100}%`,
+              height: "100%",
+              left: `-${i * 100}%`,
+            }}
+          />
+
+          {/* Shading silinder melengkung yang sangat halus */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 transition-opacity duration-600"
+            style={{
+              opacity: isHovered ? 1 : 0,
+              backgroundColor: config.shadow,
+              mixBlendMode: i >= 3 && i <= 5 ? "soft-light" : "multiply",
+            }}
+          />
+        </div>
+      );
+    })}
+    </>
+  );
+});
 
 export default function ResumeButton({
   href = "/resume.pdf",
@@ -97,60 +152,19 @@ export default function ResumeButton({
           Memotong gambar tiket menjadi 9 segmen vertikal berdampingan.
         */}
         <div className="relative flex h-full w-full [transform-style:preserve-3d]">
-          {STRIP_CONFIGS.map((config, i) => {
-            const rotY = isHovered ? config.rotY : 0;
-            const z = isHovered ? config.z : 0;
-
-            return (
-              <div
-                key={i}
-                className="relative h-full overflow-hidden [transform-style:preserve-3d] transition-transform duration-600 ease-[cubic-bezier(0.2,0.9,0.25,1)]"
-                style={{
-                  width: `calc(100% / ${NUM_STRIPS} + 0.5px)`,
-                  marginRight: i === NUM_STRIPS - 1 ? 0 : "-0.5px",
-                  transform: `rotateY(${rotY}deg) translateZ(${z}px)`,
-                  transformOrigin: i < 4 ? "right center" : i > 4 ? "left center" : "center center",
-                }}
-              >
-                {/* Potongan gambar tiket */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/resume-ticket.png"
-                  alt="Download Resume"
-                  draggable={false}
-                  className="pointer-events-none absolute top-0 max-w-none select-none"
-                  style={{
-                    width: `${NUM_STRIPS * 100}%`,
-                    height: "100%",
-                    left: `-${i * 100}%`,
-                  }}
-                />
-
-                {/* Shading silinder melengkung yang sangat halus */}
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 transition-opacity duration-600"
-                  style={{
-                    opacity: isHovered ? 1 : 0,
-                    backgroundColor: config.shadow,
-                    mixBlendMode: i >= 3 && i <= 5 ? "soft-light" : "multiply",
-                  }}
-                />
-              </div>
-            );
-          })}
+          <TicketStrips isHovered={isHovered} />
         </div>
 
         {/* 
           MASKED HIGHLIGHT KILAUAN PERSIS SESUAI BENTUK TIKET:
-          Menggunakan CSS mask-image: url('/resume-ticket.png').
+          Menggunakan CSS mask-image: url('/resume-ticket.webp').
         */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 z-30 overflow-hidden transition-all duration-600"
           style={{
-            WebkitMaskImage: "url('/resume-ticket.png')",
-            maskImage: "url('/resume-ticket.png')",
+            WebkitMaskImage: "url('/resume-ticket.webp')",
+            maskImage: "url('/resume-ticket.webp')",
             WebkitMaskSize: "100% 100%",
             maskSize: "100% 100%",
             WebkitMaskRepeat: "no-repeat",

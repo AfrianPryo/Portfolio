@@ -156,7 +156,7 @@ export default function About() {
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="/about-tribal-bg.png"
+            src="/about-tribal-bg.webp"
             alt=""
             width={1024}
             height={625}

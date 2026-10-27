@@ -256,7 +256,7 @@ export default function ExperienceArtDirection() {
                   ? { right: `${highlight.edge}%` }
                   : { left: `${highlight.edge}%` }),
               }}
-              className={`absolute z-10 font-switzer text-[length:max(10px,1.62cqw)] font-semibold leading-[1.2] tracking-[-0.04em] text-flame will-change-transform max-sm:static max-sm:text-[length:13px] ${
+              className={`absolute z-10 font-switzer text-[length:max(10px,1.4cqw)] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-flame will-change-transform max-sm:static max-sm:text-[length:13px] ${
                 highlight.side === "left"
                   ? "text-right max-sm:self-start max-sm:text-left"
                   : "text-left max-sm:self-end max-sm:text-right"

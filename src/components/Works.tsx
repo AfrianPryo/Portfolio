@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -32,10 +31,111 @@ const TOTAL = SORTED_PROJECTS.length;
 const RATIO_POOL = [2 / 3, 3 / 4, 4 / 5, 1, 5 / 4, 4 / 3, 3 / 2, 16 / 9, 2 / 1];
 const MIN_IMAGES = 2;
 const MAX_IMAGES = 5;
-const GAP = 10; // px, harus sama dengan gap pada baris gambar
-// Total rasio maksimum satu baris. Dengan tinggi baris yang sama di semua
-// proyek, batas ini menjaga baris tetap muat di lebar layar.
+// Total rasio maksimum untuk gambar dummy per proyek.
 const MAX_RATIO_SUM = 3;
+
+// ---- Slider horizontal: kartu berjajar lurus dengan jarak (gap) biasa.
+// Scroll menggeser deretan ke samping; saat bergerak, lensa barrel (fish eye)
+// menguat sesuai kecepatan geser, lalu mengendur lagi saat berhenti.
+const CARD_GAP = "clamp(16px,2.2vw,40px)";
+// Jarak scroll per proyek, relatif terhadap tinggi layar.
+const SCROLL_PER_PROJECT = 0.6;
+// Gelap maksimum kartu yang jauh dari tengah (0 = tidak digelapkan).
+const MAX_SHADE = 0.55;
+// Kekuatan barrel (SVG feDisplacementMap): maks yang dikodekan di peta,
+// puncak saat scroll cepat, dan pengali dari kecepatan (kartu/detik).
+const BARREL_MAX = 0.4;
+const BARREL_PEAK = 0.3;
+const BARREL_GAIN = 0.16;
+// Kecepatan respons lensa (makin besar makin cepat mengikuti/mengendur).
+const BARREL_RESPONSE = 7;
+
+// ---- Transisi masuk & keluar section ----
+// Masuk: section ini menempel tepat di atas layar merah penuh dari akhir
+// Skills (warnanya sama), lalu elemen-elemennya muncul di latar itu. Keluar:
+// setelah kartu terakhir ada scroll tambahan (EXIT_SCREENS layar). Isi memudar
+// ke atas, lalu tangga hitam tumbuh dari kanan atas menutup layar.
+// Latar section: bg-[#e00000] (harus sama dengan COVER_COLOR di Skills).
+// Scroll tambahan (layar) untuk animasi masuk (elemen muncul mengikuti scroll)
+// dan animasi keluar.
+const ENTRY_SCREENS = 0.7;
+// Panjang scroll (layar) fase tangga merah di akhir Skills. Harus sama dengan
+// COVER_SCREENS - COVER_LEAD di Skills.
+const STAIR_IN_SCREENS = 0.9;
+const BG_COLOR = "#e00000";
+const EXIT_SCREENS = 1;
+const EXIT_COLOR = "#000";
+const STAIR_COLS = 12;
+const STAIR_ROWS = 8;
+const STAIR_SKEW = 1.6;
+const STAIR_JITTER = [0, 0.5, 0.15, 0.7, 0.3, 0.6, 0.1, 0.45]; // >= 0
+const STAIR_JITTER_MAX = Math.max(...STAIR_JITTER);
+
+let stairEase: ((t: number) => number) | undefined;
+
+// Polygon clip-path tangga untuk progres p (0..1). `mirror` = tumbuh dari
+// kanan atas (bukan kiri atas). Lebar tiap baris kontinu supaya halus.
+// Di p = 1 seluruh layar terisi.
+function stairClip(p: number, mirror = false) {
+  stairEase ??= gsap.parseEase("power2.inOut");
+
+  const total = STAIR_COLS + (STAIR_ROWS - 1) * STAIR_SKEW + STAIR_JITTER_MAX;
+  const front = stairEase(p) * total;
+  const pts: string[] = [mirror ? "100% 0%" : "0% 0%"];
+
+  for (let r = 0; r < STAIR_ROWS; r += 1) {
+    const cols = Math.max(
+      0,
+      Math.min(STAIR_COLS, front - r * STAIR_SKEW - (STAIR_JITTER[r] ?? 0))
+    );
+    const filled = (cols / STAIR_COLS) * 100;
+    const x = (mirror ? 100 - filled : filled).toFixed(2);
+    const top = ((r / STAIR_ROWS) * 100).toFixed(2);
+    const bottom = (((r + 1) / STAIR_ROWS) * 100).toFixed(2);
+
+    pts.push(`${x}% ${top}%`, `${x}% ${bottom}%`);
+  }
+  pts.push(mirror ? "100% 100%" : "0% 100%");
+
+  return `polygon(${pts.join(",")})`;
+}
+
+// Peta displacement radial untuk lensa barrel seukuran stage. Piksel keluaran
+// mengambil sampel dari titik yang lebih jauh dari pusat, sehingga isi menyusut
+// ke tepi dan bentuknya melengkung seperti tong. `aspect` = tinggi / lebar.
+function createBarrelMap(aspect: number) {
+  const w = 128;
+  const h = Math.max(16, Math.round(w * aspect));
+  const canvas = document.createElement("canvas");
+
+  canvas.width = w;
+  canvas.height = h;
+
+  const ctx = canvas.getContext("2d");
+
+  if (!ctx) return "";
+
+  const data = ctx.createImageData(w, h);
+
+  for (let j = 0; j < h; j += 1) {
+    for (let i = 0; i < w; i += 1) {
+      const u = ((i + 0.5) / w) * 2 - 1;
+      const v = ((j + 0.5) / h) * 2 - 1;
+      const r2 = Math.sqrt(u * u + v * v);
+      const o = (j * w + i) * 4;
+
+      data.data[o] = Math.round((0.5 + (BARREL_MAX * r2 * u) / 2) * 255);
+      data.data[o + 1] = Math.round(
+        (0.5 + (BARREL_MAX * r2 * v * aspect) / 2) * 255
+      );
+      data.data[o + 2] = 128;
+      data.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(data, 0, 0);
+
+  return canvas.toDataURL();
+}
 
 const PALETTE = [
   ["#1d1d1b", "#ff4d1c"],
@@ -90,8 +190,6 @@ function mulberry32(seed: number) {
 }
 
 // Gambar dummy berupa SVG gradien (data URI), diganti gambar asli nanti.
-// Lebar 640 sudah cukup untuk tinggi baris maksimum; lebih kecil = decode
-// lebih cepat dan memori lebih hemat.
 function dummyImage(seed: number, ratio: number) {
   const w = 640;
   const h = Math.round(w / ratio);
@@ -154,16 +252,9 @@ const SLIDE_IMAGES: DummyImage[][] = (() => {
   return result;
 })();
 
-// Total rasio dan lebar celah per proyek dihitung sekali saja.
-const ROW_METRICS = SLIDE_IMAGES.map((images) => ({
-  ratioSum: images.reduce((sum, image) => sum + image.ratio, 0),
-  gaps: (images.length - 1) * GAP,
-}));
-
-// Foto tambahan untuk galeri di sidebar (di luar foto pada baris section).
+// Foto tambahan untuk galeri di sidebar (di luar foto pada kartu slider).
 // Pola rasio diputar per proyek supaya tiap galeri terasa berbeda.
-// Dibuat malas (saat proyek dibuka) dan di-cache, supaya tidak membebani
-// saat modul dimuat.
+// Dibuat malas (saat proyek dibuka) dan di-cache.
 const GALLERY_RATIOS = [16 / 9, 4 / 5, 1, 3 / 2, 4 / 5, 16 / 9];
 
 const galleryCache = new Map<number, DummyImage[]>();
@@ -187,15 +278,6 @@ function getGalleryImages(index: number): DummyImage[] {
 
   return images;
 }
-
-const pad = (n: number) => String(n).padStart(2, "0");
-
-// Pudar di tepi atas/bawah supaya baris yang keluar masuk terasa halus.
-// Dibuat dengan overlay gradien statis (bukan mask-image pada kontainer yang
-// isinya bergerak), karena mask memaksa browser menggambar ulang seluruh
-// komposisi di setiap frame scroll. Hasil visualnya sama karena latar hitam.
-const FADE_TOP = "linear-gradient(to bottom, #000 0%, rgba(0,0,0,0) 100%)";
-const FADE_BOTTOM = "linear-gradient(to top, #000 0%, rgba(0,0,0,0) 100%)";
 
 const FOCUSABLE = "a[href], button:not([disabled])";
 const subscribeToMount = () => () => {};
@@ -225,122 +307,27 @@ function Plus({ className = "" }: { className?: string }) {
   );
 }
 
-// Satu baris proyek. Dibungkus memo: saat baris aktif berganti saat scroll,
-// hanya dua baris (yang lama dan yang baru) yang dirender ulang, bukan
-// seluruh daftar beserta semua gambarnya.
-const ProjectRow = memo(function ProjectRow({
-  project,
-  index,
-  images,
-  ratioSum,
-  gaps,
-  isActive,
-  onOpen,
-}: {
-  project: Project;
-  index: number;
-  images: DummyImage[];
-  ratioSum: number;
-  gaps: number;
-  isActive: boolean;
-  onOpen: (project: number, trigger: HTMLElement) => void;
-}) {
-  return (
-    <article
-      data-slide
-      className="group/project relative flex w-full items-center px-[4vw] py-[clamp(6px,0.8vw,12px)] max-lg:py-5"
-    >
-      <div className="mx-auto flex w-full max-w-[1500px] items-start gap-[clamp(48px,5vw,80px)] max-lg:flex-col max-lg:items-start max-lg:gap-3">
-        {/* Kiri: title proyek kecil.
-            Mobile/tablet: satu baris header → [nomor] JUDUL ... kategori */}
-        <div
-          className={`flex shrink-0 flex-col gap-2 transition-opacity duration-500 max-lg:w-full max-lg:flex-row max-lg:items-baseline max-lg:gap-3 lg:w-[clamp(120px,14vw,220px)] group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
-            isActive ? "opacity-100" : "opacity-30"
-          }`}
-        >
-          {/* Nomor versi mobile (versi desktop ada di sisi foto) */}
-          <span className="font-switzer text-[12px] leading-none text-white lg:hidden">
-            [{pad(index + 1)}]
-          </span>
-          <h2 className="font-acerok text-[clamp(13px,1.1vw,18px)] font-normal uppercase leading-[1.1] text-white max-lg:min-w-0 max-lg:text-[15px]">
-            {project.title}
-          </h2>
-          <span className="font-switzer text-[clamp(11px,0.9vw,14px)] capitalize leading-none tracking-[-0.01em] text-white max-lg:ml-auto max-lg:text-[12px]">
-            {project.category}
-          </span>
-        </div>
-
-        {/* Kanan: gambar rata kanan. Semua proyek memakai tinggi
-            baris yang sama; lebar tiap gambar mengikuti rasionya.
-            Mobile/tablet: baris penuh selebar layar dengan tinggi
-            seragam (gambar di-crop), maksimal 3 foto di < 640px. */}
-        <div className="flex min-w-0 flex-1 justify-end max-lg:w-full">
-          <div
-            className="relative flex w-[var(--row-w)] max-w-full flex-col gap-2 [--row-h:clamp(110px,min(34svh,22vw),380px)] max-lg:w-full lg:gap-0"
-            style={
-              {
-                "--row-w": `calc(var(--row-h) * ${ratioSum.toFixed(3)} + ${gaps}px)`,
-              } as CSSProperties
-            }
-          >
-            {/* Nomor di sisi kiri foto pertama, sejajar tepi atasnya.
-                Disembunyikan di mobile (pindah ke header). */}
-            <span
-              className={`font-switzer text-[clamp(11px,0.9vw,14px)] leading-none text-white transition-opacity duration-500 max-lg:hidden lg:absolute lg:right-full lg:top-0 lg:mr-3 group-hover/project:opacity-100 group-focus-within/project:opacity-100 ${
-                isActive ? "opacity-100" : "opacity-30"
-              }`}
-            >
-              [{pad(index + 1)}]
-            </span>
-
-            <div className="flex items-end" style={{ gap: GAP }}>
-              {images.map(({ ratio, src }, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  aria-haspopup="dialog"
-                  aria-label={`Buka detail ${project.title}`}
-                  onClick={(event) => onOpen(index, event.currentTarget)}
-                  style={
-                    {
-                      "--ar": String(ratio),
-                      flex: `${ratio} 1 0%`,
-                    } as CSSProperties
-                  }
-                  className={`block min-w-0 cursor-pointer overflow-hidden rounded-[2px] bg-flame/10 transition-opacity duration-300 ease-out [aspect-ratio:var(--ar)] max-lg:h-[clamp(120px,24svh,220px)] max-lg:[aspect-ratio:auto] max-sm:[&:nth-child(n+4)]:hidden group-hover/project:opacity-100 group-focus-within/project:opacity-100 focus-visible:outline-none ${
-                    isActive ? "opacity-70" : "opacity-30"
-                  }`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={src}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    draggable={false}
-                    className="h-full w-full select-none object-cover object-top"
-                  />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </article>
-  );
-});
-
 export default function Works() {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const curtainRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const scrimRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const panelReadyRef = useRef(false);
   const activeRef = useRef(0);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const stRef = useRef<ScrollTrigger | null>(null);
+  // Porsi awal rentang scroll (0..1) yang dipakai menggeser kartu; sisanya
+  // dipakai animasi keluar.
+  const cardsRangeRef = useRef({ from: 0, span: 1 });
 
   const [active, setActive] = useState(0);
+  // true setelah section menempel (tangga merah dari Skills sudah penuh):
+  // memicu judul besar muncul.
+  const [shown, setShown] = useState(false);
   const mounted = useSyncExternalStore(
     subscribeToMount,
     getMountedSnapshot,
@@ -358,6 +345,12 @@ export default function Works() {
   const selectedImage = selected
     ? SLIDE_IMAGES[selected.project][selected.image]
     : null;
+
+  // Proyek yang sedang berada di tengah slider (untuk label di layar).
+  const activeProject = SORTED_PROJECTS[active] ?? SORTED_PROJECTS[0];
+
+  // Judul besar dipecah per kata lalu per huruf untuk animasi masuk.
+  const titleWords = (activeProject?.title ?? "").split(/\s+/).filter(Boolean);
 
   // Data tambahan proyek yang dipilih (dengan nilai cadangan).
   const extra: Partial<Project> = selectedProject ?? {};
@@ -396,10 +389,8 @@ export default function Works() {
       : getGalleryImages(selectedIndex);
   }, [selectedIndex]);
 
-  // Satu proyek = satu kesatuan: foto mana pun yang diklik, sidebar selalu
+  // Satu proyek = satu kesatuan: kartu mana pun yang diklik, sidebar selalu
   // terbuka dengan isi yang sama (mulai dari foto pertama).
-  // useCallback supaya identitas fungsi stabil dan ProjectRow tidak
-  // dirender ulang tanpa perlu.
   const openProject = useCallback((project: number, trigger: HTMLElement) => {
     triggerRef.current = trigger;
     setSelected({ project, image: 0 });
@@ -408,12 +399,28 @@ export default function Works() {
 
   const closeProject = () => setOpen(false);
 
+  // Klik kartu samping: scroll ke posisi kartu itu (snap menyesuaikan).
+  const goTo = (index: number) => {
+    const st = stRef.current;
+
+    if (!st || TOTAL < 2) return;
+
+    window.scrollTo({
+      top:
+        st.start +
+        (st.end - st.start) *
+          (cardsRangeRef.current.from +
+            cardsRangeRef.current.span * (index / (TOTAL - 1))),
+      behavior: "smooth",
+    });
+  };
+
   // Ganti foto utama di sidebar tanpa menutupnya.
   const selectImage = (image: number) =>
     setSelected((current) => (current ? { ...current, image } : current));
 
   // Saat sidebar terbuka: kunci scroll, matikan interaksi section, Esc untuk
-  // menutup, Tab dijaga tetap di dalam sidebar. Fokus dikembalikan ke foto
+  // menutup, Tab dijaga tetap di dalam sidebar. Fokus dikembalikan ke kartu
   // yang diklik saat ditutup.
   useEffect(() => {
     if (!open) return;
@@ -466,6 +473,29 @@ export default function Works() {
       triggerRef.current?.focus({ preventScroll: true });
     };
   }, [open]);
+
+  // Gambar 3 kartu pertama tidak lagi "eager" (Works jauh di bawah Hero, jadi
+  // tidak boleh berebut bandwidth dengan konten awal). Sebagai gantinya dimuat
+  // ke cache saat browser idle supaya sudah siap sebelum Works terlihat.
+  useEffect(() => {
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const warm = () => {
+      for (let i = 0; i < Math.min(3, SLIDE_IMAGES.length); i++) {
+        const pre = new Image();
+        pre.decoding = "async";
+        pre.src = SLIDE_IMAGES[i][0].src;
+      }
+    };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(warm, { timeout: 4000 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = window.setTimeout(warm, 2500);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // Sidebar selalu mulai dari atas setiap kali proyek dibuka.
   useEffect(() => {
@@ -538,143 +568,673 @@ export default function Works() {
     { dependencies: [open, mounted] }
   );
 
-  // Section di-pin setinggi layar. Selama user scroll, hanya daftar proyek
-  // (nama + foto) yang bergerak naik; baris yang melewati tengah menjadi aktif.
+  // Judul besar: huruf muncul dari tengah ke luar setiap proyek aktif berganti.
+  // Hanya opacity + transform (tanpa filter blur per huruf) supaya ringan.
   useGSAP(
     () => {
-      const root = rootRef.current;
-      const list = listRef.current;
+      const el = titleRef.current;
 
-      if (!root || !list || TOTAL < 1) return;
+      if (!el) return;
 
-      const rows = gsap.utils.toArray<HTMLElement>("[data-slide]", list);
-      const first = rows[0];
-      const last = rows[rows.length - 1];
+      const chars = gsap.utils.toArray<HTMLElement>("[data-char]", el);
 
-      if (!first || !last) return;
+      // Belum waktunya: judul menunggu section menempel di latar merah.
+      if (!shown) {
+        gsap.set(chars, { autoAlpha: 0 });
+        return;
+      }
 
-      // Posisi list saat baris pertama / terakhir tepat di tengah layar.
-      const startY = () =>
-        root.clientHeight / 2 - (first.offsetTop + first.offsetHeight / 2);
-      const endY = () =>
-        root.clientHeight / 2 - (last.offsetTop + last.offsetHeight / 2);
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        gsap.set(chars, { autoAlpha: 1 });
+        return;
+      }
 
       gsap.fromTo(
-        list,
-        { y: startY },
+        chars,
+        { autoAlpha: 0, yPercent: 55 },
         {
-          y: endY,
-          ease: "none",
-          scrollTrigger: {
-            trigger: root,
-            start: "top top",
-            end: () => `+=${Math.max(1, Math.round(startY() - endY()))}`,
-            pin: true,
-            pinSpacing: true,
-            scrub: 0.6,
-            anticipatePin: 1,
-            invalidateOnRefresh: true,
-            // Dihitung lebih dulu dari trigger section lain (mis. Contact)
-            // supaya jarak pin sudah masuk saat posisi mereka dihitung.
-            refreshPriority: 1,
-            onUpdate: (self) => {
-              const next = Math.round(
-                self.progress * Math.max(0, TOTAL - 1)
-              );
-
-              // Hanya update state kalau baris aktif benar-benar berganti,
-              // bukan di setiap frame scroll.
-              if (next !== activeRef.current) {
-                activeRef.current = next;
-                setActive(next);
-              }
-            },
-          },
+          autoAlpha: 1,
+          yPercent: 0,
+          duration: 0.7,
+          stagger: { each: 0.025, from: "center" },
+          ease: "power3.out",
+          overwrite: "auto",
         }
       );
+    },
+    { dependencies: [active, shown], scope: titleRef }
+  );
 
-      // Gambar dan font bisa menggeser layout; hitung ulang posisi trigger.
-      // Beberapa pemicu (load, fonts.ready) digabung jadi satu refresh supaya
-      // tidak menghitung ulang seluruh halaman berkali-kali.
-      let pending: gsap.core.Tween | null = null;
-      let cancelled = false;
-      const refresh = () => {
-        if (cancelled) return;
-        pending?.kill();
-        pending = gsap.delayedCall(0.15, () => ScrollTrigger.refresh());
+  // Section di-pin setinggi layar. Scroll menggeser deretan kartu ke samping
+  // (slider horizontal, gap biasa). Kartu terdekat dari tengah menjadi proyek
+  // aktif. Lensa barrel (fish eye) hanya menguat saat deretan sedang bergerak,
+  // sebanding dengan kecepatannya, lalu kembali rata saat berhenti.
+  useGSAP(
+    () => {
+      const wrap = wrapRef.current;
+      const root = rootRef.current;
+      const stage = stageRef.current;
+      const track = stage?.querySelector<HTMLElement>("[data-track]");
+      const layer = stage?.querySelector<HTMLElement>("[data-lens-layer]");
+      const barrel = root?.querySelector<SVGFilterElement>("#works-barrel");
+      const map =
+        root?.querySelector<SVGFEImageElement>("#works-barrel-map");
+      const disp = root?.querySelector<SVGFEDisplacementMapElement>(
+        "#works-barrel-disp"
+      );
+
+      if (!wrap || !root || !stage || !track || !layer || TOTAL < 1) return;
+
+      const cards = gsap.utils.toArray<HTMLElement>("[data-card]", track);
+
+      if (!cards.length) return;
+
+      const shades = cards.map(
+        (card) => card.querySelector<HTMLElement>("[data-shade]")
+      );
+      // Cache opacity terakhir tiap kartu: tulis ke DOM hanya kalau berubah.
+      const shadeCache = cards.map(() => -1);
+      const reduce = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      // Filter displacement di layar penuh itu mahal: lewati di perangkat
+      // layar sentuh dan perangkat dengan CPU lemah.
+      const lowPower =
+        window.matchMedia("(pointer: coarse)").matches ||
+        (navigator.hardwareConcurrency ?? 8) <= 4;
+      const state = { pos: 0 };
+      let step = 0; // jarak antar pusat kartu (lebar kartu + gap), px
+      let lastTransform = "";
+
+      // Geser deretan dan gelapkan kartu yang jauh dari tengah.
+      const render = (pos: number) => {
+        const transform = `translate3d(${(-pos * step).toFixed(1)}px,0,0)`;
+
+        if (transform !== lastTransform) {
+          lastTransform = transform;
+          track.style.transform = transform;
+        }
+
+        for (let i = 0; i < cards.length; i += 1) {
+          const shade = shades[i];
+
+          if (!shade) continue;
+
+          const value = Number(
+            Math.min(MAX_SHADE, Math.abs(i - pos) * 0.45).toFixed(2)
+          );
+
+          if (value !== shadeCache[i]) {
+            shadeCache[i] = value;
+            shade.style.opacity = String(value);
+          }
+        }
       };
 
-      window.addEventListener("load", refresh);
-      document.fonts?.ready.then(refresh);
+      const measure = () => {
+        step =
+          cards.length > 1
+            ? cards[1].offsetLeft - cards[0].offsetLeft
+            : cards[0].offsetWidth;
+        lastTransform = "";
+        render(state.pos);
+      };
+
+      measure();
+
+      // ----- Barrel distortion (lensa seluas stage, hanya untuk deretan kartu;
+      // judul dan label tidak ikut melengkung) -----
+      let teardownLens: (() => void) | undefined;
+
+      if (barrel && map && disp && !reduce && !lowPower) {
+        let width = layer.offsetWidth;
+        let k = 0;
+        let appliedK = -1;
+        let lastPos = state.pos;
+        let lensOn = false;
+        let mapTimer: number | undefined;
+
+        const applyBarrel = () => {
+          // Lewati kalau perubahannya terlalu kecil untuk terlihat.
+          if (Math.abs(k - appliedK) < 0.002) return;
+
+          appliedK = k;
+          disp.setAttribute("scale", String((width * k) / BARREL_MAX));
+        };
+        const applyMap = () => {
+          map.setAttribute(
+            "href",
+            createBarrelMap(layer.offsetHeight / Math.max(layer.offsetWidth, 1))
+          );
+        };
+        const applySize = () => {
+          width = layer.offsetWidth;
+
+          const height = layer.offsetHeight;
+
+          barrel.setAttribute("width", String(width));
+          barrel.setAttribute("height", String(height));
+          map.setAttribute("width", String(width));
+          map.setAttribute("height", String(height));
+          appliedK = -1;
+          applyBarrel();
+          // Peta bergantung pada rasio stage, jadi dibuat ulang saat resize.
+          window.clearTimeout(mapTimer);
+          mapTimer = window.setTimeout(applyMap, 120);
+        };
+
+        applyMap();
+        applySize();
+
+        const resizeObserver = new ResizeObserver(applySize);
+
+        resizeObserver.observe(layer);
+
+        // Tiap frame: kecepatan geser (kartu/detik) -> target kekuatan lensa,
+        // diperhalus supaya masuk dan mengendurnya terasa mulus. Filter hanya
+        // dipasang saat lensa benar-benar aktif, jadi gambar tajam saat diam.
+        const tick = (_time: number, deltaTime: number) => {
+          // Diam dan lensa sudah mati: tidak ada yang perlu dihitung.
+          if (k === 0 && state.pos === lastPos) return;
+          if (deltaTime <= 0) return;
+
+          const dt = deltaTime / 1000;
+          const speed = Math.abs(state.pos - lastPos) / dt;
+
+          lastPos = state.pos;
+
+          const target = Math.min(BARREL_PEAK, speed * BARREL_GAIN);
+
+          k += (target - k) * (1 - Math.exp(-dt * BARREL_RESPONSE));
+
+          if (k < 0.004) {
+            k = 0;
+            appliedK = -1;
+            if (lensOn) {
+              lensOn = false;
+              layer.style.filter = "";
+            }
+            return;
+          }
+
+          if (!lensOn) {
+            lensOn = true;
+            layer.style.filter = "url(#works-barrel)";
+          }
+          applyBarrel();
+        };
+
+        gsap.ticker.add(tick);
+
+        teardownLens = () => {
+          gsap.ticker.remove(tick);
+          window.clearTimeout(mapTimer);
+          resizeObserver.disconnect();
+          layer.style.filter = "";
+        };
+      }
+
+      // Rentang scroll section: masuk -> geser kartu -> keluar. Rasio ketiganya
+      // dikunci saat dibuat supaya tetap proporsional saat resize.
+      const cardsPx = () =>
+        Math.max(
+          1,
+          Math.round(
+            (TOTAL - 1) *
+              Math.max(window.innerHeight * SCROLL_PER_PROJECT, 320)
+          )
+        );
+      const entryUnits = (ENTRY_SCREENS * window.innerHeight) / cardsPx();
+      const exitUnits = (EXIT_SCREENS * window.innerHeight) / cardsPx();
+      const totalUnits = entryUnits + 1 + exitUnits;
+      const entryFrac = entryUnits / totalUnits;
+      const cardsFrac = 1 / totalUnits;
+
+      cardsRangeRef.current = { from: entryFrac, span: cardsFrac };
+
+      // Animasi keluar: tangga hitam (clip-path) menutup layar.
+      const exitCover = root.querySelector<HTMLElement>("[data-exit-cover]");
+      const exitEls = gsap.utils.toArray<HTMLElement>("[data-exit]", root);
+      const cover = { p: 0 };
+      let lastClip = "";
+      const applyCover = () => {
+        if (!exitCover) return;
+
+        const clip = stairClip(cover.p, true);
+
+        if (clip !== lastClip) {
+          lastClip = clip;
+          exitCover.style.clipPath = clip;
+        }
+      };
+
+      applyCover();
+
+      // Section tersembunyi (dan tidak menangkap pointer) sampai pin dimulai,
+      // yaitu saat tangga merah Skills sudah penuh. Begitu pin dimulai, latar
+      // merah section ini tampil (sama persis dengan yang di bawahnya). Elemen
+      // lalu muncul MENGIKUTI SCROLL (bukan animasi berbasis waktu), jadi tidak
+      // ada loncatan: kartu naik, teks kecil menyusul, judul muncul di tengah
+      // fase masuk.
+      const pSpans = gsap.utils.toArray<HTMLElement>("p[data-exit] > span", root);
+      let on = false;
+      let titleOn = false;
+
+      const sync = (self: ScrollTrigger) => {
+        // Dihitung dari posisi scroll nyata (bukan self.progress) supaya tidak
+        // salah saat ScrollTrigger sedang refresh.
+        const span = self.end - self.start;
+        const progress =
+          span > 0
+            ? gsap.utils.clamp(0, 1, (self.scroll() - self.start) / span)
+            : 0;
+        const visible = progress > 0;
+
+        if (visible !== on) {
+          on = visible;
+          root.style.visibility = on ? "visible" : "hidden";
+          root.style.pointerEvents = on ? "auto" : "none";
+        }
+
+        const title = progress >= entryFrac * 0.35;
+
+        if (title !== titleOn) {
+          titleOn = title;
+          setShown(title);
+        }
+      };
+
+      const tl = gsap.timeline({
+        defaults: { ease: "none" },
+        scrollTrigger: {
+          // Tanpa pin GSAP: section menempel dengan position: sticky bawaan
+          // browser (sama seperti Skills) di dalam wrapper yang tingginya =
+          // 1 layar + jarak scroll, jadi tidak ada peralihan fixed <-> normal
+          // yang bisa menimbulkan celah, terutama saat scroll balik.
+          trigger: wrap,
+          start: "top top",
+          end: "bottom bottom",
+          scrub: 0.6,
+          invalidateOnRefresh: true,
+          // Dihitung lebih dulu dari trigger section lain (mis. Contact)
+          // supaya jarak pin sudah masuk saat posisi mereka dihitung.
+          refreshPriority: 1,
+          // Berhenti tepat saat satu kartu berada di tengah. Hanya di fase
+          // geser kartu: fase masuk dan keluar scroll bebas tanpa snap.
+          snap:
+            TOTAL > 1
+              ? {
+                  snapTo: (value: number) => {
+                    if (value < entryFrac || value > entryFrac + cardsFrac) {
+                      return value;
+                    }
+
+                    const step = cardsFrac / (TOTAL - 1);
+
+                    return (
+                      entryFrac +
+                      Math.round((value - entryFrac) / step) * step
+                    );
+                  },
+                  duration: { min: 0.25, max: 0.6 },
+                  delay: 0.08,
+                  ease: "power2.inOut",
+                }
+              : false,
+          onUpdate: sync,
+          onRefresh: (self) => {
+            measure();
+            sync(self);
+          },
+        },
+      });
+
+      // Fase masuk (0 .. entryUnits): kartu naik dan membesar bergantian,
+      // lalu teks kecil kiri-kanan menyusul.
+      tl.fromTo(
+        cards,
+        { autoAlpha: 0, y: 90, scale: 0.92 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          scale: 1,
+          duration: entryUnits * 0.6,
+          stagger: { amount: entryUnits * 0.4, from: "start" },
+          ease: "power3.out",
+        },
+        0
+      );
+      tl.fromTo(
+        pSpans,
+        { autoAlpha: 0, y: 18 },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: entryUnits * 0.4,
+          stagger: { amount: entryUnits * 0.15, from: "start" },
+          ease: "power3.out",
+        },
+        entryUnits * 0.45
+      );
+
+      // Fase geser kartu (entryUnits .. entryUnits + 1).
+      tl.to(
+        state,
+        {
+          pos: TOTAL - 1,
+          duration: 1,
+          onUpdate: () => {
+            render(state.pos);
+
+            const next = Math.round(state.pos);
+
+            // Hanya update state kalau proyek aktif benar-benar berganti,
+            // bukan di setiap frame scroll.
+            if (next !== activeRef.current) {
+              activeRef.current = next;
+              setActive(next);
+            }
+          },
+        },
+        entryUnits
+      );
+
+      // Fase keluar: isi memudar & naik, lalu tangga hitam menutup.
+      const exitAt = entryUnits + 1;
+
+      tl.to(
+        layer,
+        {
+          autoAlpha: 0,
+          scale: 0.9,
+          yPercent: -6,
+          duration: exitUnits * 0.55,
+          ease: "power2.in",
+        },
+        exitAt
+      );
+      tl.to(
+        exitEls,
+        {
+          autoAlpha: 0,
+          y: -36,
+          duration: exitUnits * 0.4,
+          stagger: exitUnits * 0.06,
+          ease: "power2.in",
+        },
+        exitAt
+      );
+      tl.to(
+        cover,
+        {
+          p: 1,
+          duration: exitUnits * 0.85,
+          onUpdate: applyCover,
+        },
+        exitAt + exitUnits * 0.15
+      );
+
+      stRef.current = tl.scrollTrigger ?? null;
+      if (tl.scrollTrigger) sync(tl.scrollTrigger);
 
       return () => {
-        cancelled = true;
-        pending?.kill();
-        window.removeEventListener("load", refresh);
+        teardownLens?.();
+        stRef.current = null;
+        root.style.visibility = "";
+        root.style.pointerEvents = "";
       };
     },
     { scope: rootRef }
   );
 
+  // ===== Tirai merah (lapisan fixed seukuran layar) =====
+  // Tangga merah tumbuh menutupi Skills lalu tetap menjadi latar Works sampai
+  // animasi keluar selesai. Karena fixed + inset-0, ukurannya SELALU persis
+  // layar: tidak ada celah di bawah/atas apa pun yang dilakukan section lain
+  // (sticky Skills terangkat, pin, dll), baik saat scroll maju maupun balik.
+  useGSAP(
+    () => {
+      const wrap = wrapRef.current;
+      const curtain = curtainRef.current;
+
+      if (!wrap || !curtain) return;
+
+      let last = "";
+      const apply = (p: number) => {
+        const clip = stairClip(p);
+
+        if (clip !== last) {
+          last = clip;
+          curtain.style.clipPath = clip;
+        }
+      };
+
+      apply(0);
+
+      // Tangga tumbuh selama STAIR_IN_SCREENS layar sebelum Works menempel.
+      const stairStart = () =>
+        `top ${Math.round(window.innerHeight * STAIR_IN_SCREENS)}px`;
+
+      ScrollTrigger.create({
+        trigger: wrap,
+        start: stairStart,
+        end: "top top",
+        scrub: true,
+        invalidateOnRefresh: true,
+        onUpdate: (self) => apply(self.progress),
+        onRefresh: (self) => apply(self.progress),
+      });
+
+      // Tirai hanya tampil dari awal tangga sampai akhir animasi keluar
+      // (saat itu tangga hitam sudah menutup penuh).
+      const setVisible = (self: ScrollTrigger) => {
+        curtain.style.visibility = self.isActive ? "visible" : "hidden";
+      };
+
+      ScrollTrigger.create({
+        trigger: wrap,
+        start: stairStart,
+        end: "bottom bottom",
+        invalidateOnRefresh: true,
+        onToggle: setVisible,
+        onRefresh: setVisible,
+      });
+    },
+    { scope: wrapRef }
+  );
+
   return (
+    <div
+      ref={wrapRef}
+      style={{
+        // 1 layar (yang menempel) + jarak scroll: kartu per proyek, fase masuk,
+        // dan fase keluar. Harus sama dengan hitungan di useGSAP.
+        height: `calc(100svh + ${TOTAL - 1} * max(${SCROLL_PER_PROJECT * 100}svh, 320px) + ${(ENTRY_SCREENS + EXIT_SCREENS) * 100}svh)`,
+        minHeight: "100vh",
+      }}
+    >
+      {/* Tirai merah: fixed seukuran layar, di dalam wrapper Works (yang sudah
+          berada di atas Skills) dan di bawah section Works (sticky). */}
+      <div
+        ref={curtainRef}
+        aria-hidden="true"
+        className="pointer-events-none invisible fixed inset-0"
+        style={{
+          backgroundColor: BG_COLOR,
+          clipPath: "polygon(0% 0%,0% 0%,0% 100%)",
+        }}
+      />
     <section
       ref={rootRef}
       id="works"
       aria-label="Karya"
-      className="relative isolate h-svh w-full overflow-hidden bg-black"
+      className="pointer-events-none invisible sticky top-0 isolate h-svh min-h-screen w-full overflow-hidden"
     >
-      {/* Jendela tetap setinggi layar. Semua yang bergerak (daftar proyek)
-          dipotong keras di sini lewat overflow, clip-path, dan contain, jadi
-          tidak bisa keluar ke section lain. */}
-      <div
-        className="absolute inset-0 overflow-hidden"
-        style={{
-          clipPath: "inset(0)",
-          contain: "paint",
-        }}
+      {/* Filter barrel distortion untuk deretan kartu (peta displacement dan
+          ukuran diisi dari JS). */}
+      <svg
+        aria-hidden="true"
+        width="0"
+        height="0"
+        className="pointer-events-none absolute"
       >
-        <div ref={listRef} className="will-change-transform">
-          {SORTED_PROJECTS.map((project, index) => (
-            <ProjectRow
-              key={project.slug}
-              project={project}
-              index={index}
-              images={SLIDE_IMAGES[index]}
-              ratioSum={ROW_METRICS[index].ratioSum}
-              gaps={ROW_METRICS[index].gaps}
-              isActive={index === active}
-              onOpen={openProject}
-            />
+        <filter
+          id="works-barrel"
+          x="0"
+          y="0"
+          width="300"
+          height="225"
+          filterUnits="userSpaceOnUse"
+          primitiveUnits="userSpaceOnUse"
+          colorInterpolationFilters="sRGB"
+        >
+          <feImage
+            id="works-barrel-map"
+            x="0"
+            y="0"
+            width="300"
+            height="225"
+            preserveAspectRatio="none"
+            result="map"
+          />
+          <feDisplacementMap
+            id="works-barrel-disp"
+            in="SourceGraphic"
+            in2="map"
+            scale="0"
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
+      </svg>
+
+      {/* Jendela tetap setinggi layar; kartu yang bergeser dipotong di sini
+          supaya tidak keluar ke section lain. */}
+      <div
+        ref={stageRef}
+        className="absolute inset-0 overflow-hidden [--card-w:72vw] sm:[--card-w:min(52vw,calc(62svh*1.6))]"
+        style={{ contain: "paint" }}
+      >
+        {/* Layer lensa: seukuran stage, tempat filter barrel dipasang. */}
+        <div data-lens-layer className="absolute inset-0">
+          {/* Deretan kartu: dimulai dengan kartu pertama tepat di tengah. */}
+          <div
+            data-track
+            className="absolute left-0 top-0 flex h-full items-center will-change-transform"
+            style={
+              {
+                gap: CARD_GAP,
+                paddingLeft: "calc(50% - var(--card-w) / 2)",
+              } as CSSProperties
+            }
+          >
+            {SORTED_PROJECTS.map((project, index) => (
+              <button
+                key={project.slug}
+                type="button"
+                data-card
+                data-works-project
+                aria-haspopup={index === active ? "dialog" : undefined}
+                aria-current={index === active ? "true" : undefined}
+                aria-label={
+                  index === active
+                    ? `Buka detail ${project.title}`
+                    : `Tampilkan ${project.title}`
+                }
+                onClick={(event) =>
+                  index === active
+                    ? openProject(index, event.currentTarget)
+                    : goTo(index)
+                }
+                style={{
+                  width: "var(--card-w)",
+                  height: "calc(var(--card-w) / 1.6)",
+                }}
+                className="relative block shrink-0 cursor-pointer overflow-hidden rounded-[3px] bg-black/20 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.6)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-white"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={SLIDE_IMAGES[index][0].src}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  draggable={false}
+                  className="h-full w-full select-none object-cover object-center"
+                />
+                {/* Lapisan gelap: makin pekat untuk kartu yang jauh dari tengah */}
+                <span
+                  aria-hidden="true"
+                  data-shade
+                  className="pointer-events-none absolute inset-0 bg-black opacity-0"
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Vinyet gelap di tepi layar */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[5]"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.35) 100%)",
+        }}
+      />
+
+      {/* Judul proyek aktif: besar, di tengah, melintasi kartu */}
+      <div
+        aria-hidden="true"
+        data-exit
+        className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-[4vw]"
+      >
+        <div
+          ref={titleRef}
+          className="flex flex-wrap justify-center gap-x-[0.28em] text-center font-acerok text-[clamp(26px,5.2vw,92px)] uppercase leading-[1.05] tracking-[0.02em] text-white"
+          style={{ textShadow: "0 2px 28px rgba(0,0,0,0.4)" }}
+        >
+          {titleWords.map((word, wi) => (
+            <span
+              key={`${active}-${wi}`}
+              className="inline-flex whitespace-nowrap"
+            >
+              {Array.from(word).map((char, ci) => (
+                <span key={ci} data-char className="inline-block">
+                  {char}
+                </span>
+              ))}
+            </span>
           ))}
         </div>
       </div>
 
-      {/* Pudar tepi atas/bawah (overlay statis, pengganti mask-image) */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 z-[5] h-[18%]"
-        style={{ backgroundImage: FADE_TOP }}
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-[18%]"
-        style={{ backgroundImage: FADE_BOTTOM }}
-      />
+      {/* Deskripsi kecil proyek aktif (gaya sama dengan teks kecil di Contact).
+          Desktop: kiri & kanan. Mobile (< 640px): atas (rata kiri) & bawah (rata kanan) kartu. */}
+      <p data-exit className="pointer-events-none absolute left-[2vw] top-[48%] z-10 max-w-[28vw] font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-white max-sm:top-[26%] max-sm:max-w-[60vw] lg:max-w-[16vw] lg:text-[0.72vw]">
+        <span className="block">{activeProject?.category}</span>
+        <span className="block">{activeProject?.description}</span>
+      </p>
+      <p data-exit className="pointer-events-none absolute right-[2vw] top-[48%] z-10 max-w-[28vw] text-right font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-white max-sm:top-auto max-sm:bottom-[26%] max-sm:max-w-[60vw] lg:max-w-[16vw] lg:text-[0.72vw]">
+        <span className="block">
+          {activeProject?.role ?? FALLBACK_ROLE[activeProject.category]}
+        </span>
+        {activeProject?.year && (
+          <span className="block">{activeProject.year}</span>
+        )}
+      </p>
 
-      {/* Penanda posisi, diam di tempat */}
+      {/* Tangga hitam untuk animasi keluar: tumbuh dari kanan atas menutupi
+          section sebelum section berikutnya masuk. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute right-[2vw] top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2 max-sm:hidden"
-      >
-        {SORTED_PROJECTS.map((project, i) => (
-          <span
-            key={project.slug}
-            className={`block w-px bg-flame transition-all duration-500 ${
-              i === active ? "h-8 opacity-100" : "h-3 opacity-30"
-            }`}
-          />
-        ))}
-      </div>
+        data-exit-cover
+        className="pointer-events-none absolute inset-0 z-[30]"
+        style={{
+          backgroundColor: EXIT_COLOR,
+          clipPath: "polygon(100% 0%,100% 0%,100% 100%)",
+        }}
+      />
 
       {/* Sidebar detail proyek (detail final, tanpa halaman lanjutan),
           dirender di body supaya berada di atas navbar dan tidak ikut
@@ -703,8 +1263,8 @@ export default function Works() {
                 scrollbarWidth: "thin",
                 scrollbarColor: "rgba(255,255,255,0.25) transparent",
                 // Efek blur pada background sidebar.
-                backdropFilter: "blur(24px) saturate(1.2)",
-                WebkitBackdropFilter: "blur(24px) saturate(1.2)",
+                backdropFilter: "blur(16px) saturate(1.2)",
+                WebkitBackdropFilter: "blur(16px) saturate(1.2)",
               }}
               // shrink-0 pada semua anak: tanpa ini isi menyusut mengikuti
               // tinggi layar dan panel tidak pernah bisa di-scroll.
@@ -909,5 +1469,6 @@ export default function Works() {
           document.body
         )}
     </section>
+    </div>
   );
 }
