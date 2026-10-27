@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Navbar from "@/components/Navbar";
-import CtaButton from "@/components/CtaButton";
 import ResumeMotion from "@/components/ResumeMotion";
 
 export const metadata: Metadata = {
@@ -20,6 +19,10 @@ export const metadata: Metadata = {
 };
 
 const EMAIL = "annosulistyanno@gmail.com";
+const PHONE = "+62 882 3895 9665";
+
+// Video latar yang sama dengan section Contact.
+const BG_SRC = "/contact-bg.mp4";
 
 const about =
   "Siswa PPLG di SMKN 1 Bangsri yang berfokus sebagai UI/UX Designer dan Junior Fullstack Developer. Berpengalaman merancang desain antarmuka pengguna serta mengembangkan aplikasi web modern dengan React, Laravel, dan MySQL. Berkomitmen untuk terus belajar, berkolaborasi dalam tim, dan menghasilkan produk digital yang responsif serta berorientasi pada pengalaman pengguna.";
@@ -37,7 +40,7 @@ const experiences: Entry[] = [
     title: "Web Portofolio",
     role: "UI/UX Designer",
     place: "Sinanggul, Jepara",
-    period: "2026 - Sekarang",
+    period: "2026 — Sekarang",
     text: "Proyek individu untuk merancang UI/UX website portofolio pribadi, dari struktur halaman sampai gaya visualnya, sebagai karya mandiri dari seorang siswa.",
   },
   {
@@ -111,21 +114,67 @@ const education: Entry[] = [
 const software =
   "Adobe After Effects, Adobe Illustrator, Adobe Photoshop, Affinity, Android Studio, Arduino, Blender, Canva, Cavalry, Figma, Framer, Git, MongoDB, Postman, Visual Studio, VSCode.";
 
-const letter = (i: number) => String.fromCharCode(65 + i);
+// Judul hero: blur per huruf makin ke ujung, sama seperti heading di Contact.
+const HERO_WORD = "RESUME";
+const HERO_BLUR = [0, 0, 1, 2, 4, 6];
+const BLUR_STEP = 0.012;
 
-/* Label kecil bergaya [ Teks ] */
-function Bracket({ children }: { children: React.ReactNode }) {
+// Bingkai merah #e00000 di atas latar #080000, sama seperti Contact.
+const FRAME =
+  "relative isolate overflow-hidden bg-[#e00000] text-white px-[6vw] py-[10vw] lg:px-[2vw] lg:py-[2vw]";
+
+// Label kecil Switzer huruf kecil, ukuran disamakan dengan teks kecil Contact.
+const SMALL =
+  "font-switzer text-[clamp(10px,0.75vw,12px)] font-medium lowercase leading-[1.1] tracking-[-0.05em]";
+
+/* Video latar yang sama dengan Contact (grain + figur sudah ada di dalam video). */
+function Bg() {
   return (
-    <span
-      data-anim="fade"
-      className="inline-block font-switzer text-[12px] font-medium leading-none tracking-[-0.01em] text-white/60"
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 -z-10 scale-[1.14]"
     >
-      [ {children} ]
-    </span>
+      <video
+        src={BG_SRC}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="metadata"
+        aria-hidden="true"
+        draggable={false}
+        className="h-full w-full select-none object-cover object-center"
+      />
+    </div>
   );
 }
 
-/* Paragraf polos, baris pertama menjorok seperti di referensi */
+/* Teks kecil dua baris: label (70%) di atas, isi di bawah */
+function Info({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <p data-anim="fade" className={SMALL}>
+      <span className="block opacity-70">{label}</span>
+      <span className="block normal-case">{children}</span>
+    </p>
+  );
+}
+
+/* Label section di kolom kiri */
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <p data-anim="fade" className={`${SMALL} text-white/70 md:col-span-3`}>
+      {children}
+    </p>
+  );
+}
+
+/* Paragraf polos */
 function Prose({
   children,
   className = "",
@@ -136,15 +185,14 @@ function Prose({
   return (
     <p
       data-anim="lines"
-      className={`font-switzer text-[14px] leading-[1.25] tracking-[-0.01em] text-white/75 [text-indent:2.4em] ${className}`}
+      className={`font-switzer text-[clamp(12px,0.9vw,14px)] leading-[1.35] tracking-[-0.01em] text-white/75 ${className}`}
     >
       {children}
     </p>
   );
 }
 
-/* Judul section: font Acerok kapital berwarna flame, sama seperti title di
-   section Skills. */
+/* Judul section: Acerok kapital putih, tracking rapat seperti heading Contact */
 function Heading({
   id,
   children,
@@ -156,88 +204,39 @@ function Heading({
     <h2
       id={id}
       data-anim="title"
-      className="font-acerok text-[clamp(30px,4.3vw,68px)] font-normal uppercase leading-[1.05] tracking-[0.01em] text-flame"
+      className="font-acerok text-[clamp(22px,2.8vw,44px)] font-normal uppercase leading-[0.92] tracking-[-0.07em] text-white"
     >
       {children}
     </h2>
   );
 }
 
-/* Ornamen latar: di belakang konten, tepi di-feather agar tidak terpotong */
-function Ornament({
-  src,
-  ratio,
-  className = "",
-  imgClassName = "",
-  fade = "x",
-}: {
-  src: string;
-  ratio: [number, number];
-  className?: string;
-  imgClassName?: string;
-  fade?: "x" | "y";
-}) {
-  const mask =
-    fade === "x"
-      ? "linear-gradient(to right, transparent 0%, black 8%, black 92%, transparent 100%)"
-      : "linear-gradient(to bottom, black 0%, black 50%, transparent 100%)";
+/* Daftar entri: periode | judul & peran | deskripsi, dipisah garis tipis */
+function Rows({ items }: { items: Entry[] }) {
   return (
-    <div
-      aria-hidden="true"
-      className={`pointer-events-none absolute -z-10 select-none ${className}`}
-      style={{ WebkitMaskImage: mask, maskImage: mask }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt=""
-        width={ratio[0]}
-        height={ratio[1]}
-        loading="lazy"
-        decoding="async"
-        draggable={false}
-        className={`h-auto w-full ${imgClassName}`}
-      />
-    </div>
-  );
-}
-
-/* Entri bergaya "cases": diselang-seling kiri/kanan dengan jeda vertikal */
-function Cases({ items }: { items: Entry[] }) {
-  return (
-    <div className="mt-16 grid gap-y-14 md:mt-24 md:grid-cols-12 md:gap-y-0">
-      {items.map((item, i) => {
-        const right = i % 2 === 1;
-        return (
-          <article
-            key={`${item.title}-${item.role}`}
-            data-group
-            className={`md:col-span-4 md:mb-16 ${
-              right ? "md:col-start-8 md:mt-28" : "md:col-start-3"
-            }`}
+    <ol className="mt-10 md:mt-16">
+      {items.map((item) => (
+        <li
+          key={`${item.title}-${item.role}`}
+          data-group
+          className="grid gap-y-3 border-t border-white/15 py-5 md:grid-cols-12 md:gap-x-4 md:py-6"
+        >
+          <p data-anim="fade" className={`${SMALL} md:col-span-3`}>
+            <span className="block">{item.period}</span>
+            <span className="block opacity-70">{item.place}</span>
+          </p>
+          <h3
+            data-anim="title"
+            className="font-acerok text-[clamp(13px,1.1vw,17px)] font-normal uppercase leading-[1] tracking-[-0.04em] text-white md:col-span-4"
           >
-            <div className="flex items-baseline gap-3">
-              <Bracket>{letter(i)}</Bracket>
-              <h3
-                data-anim="title"
-                className="font-switzer text-[14px] font-semibold leading-[1.1] tracking-[-0.01em] text-white"
-              >
-                {item.title}
-                <br />
-                {item.role}
-              </h3>
-            </div>
-            <p
-              data-anim="fade"
-              className="mt-3 font-switzer text-[12px] leading-none text-white/45"
-            >
-              {item.period} &middot; {item.place}
-            </p>
-            <Prose className="mt-4">{item.text}</Prose>
-          </article>
-        );
-      })}
-    </div>
+            {item.title}
+            <br />
+            <span className="text-white/60">{item.role}</span>
+          </h3>
+          <Prose className="md:col-span-5">{item.text}</Prose>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -245,59 +244,58 @@ export default function ResumePage() {
   return (
     <>
       <Navbar isResumePage />
-      <main className="relative min-h-screen overflow-hidden bg-black px-[4vw] pb-16 pt-32 text-white max-sm:px-5 max-sm:pt-28">
-        {/* Latar halaman: cahaya merah tipis dari atas + noise film grain */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(ellipse_70%_38%_at_50%_0%,rgba(255,34,0,0.16),transparent_70%)]"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 bg-[url('/noise.webp')] opacity-[0.07] mix-blend-screen"
-        />
+      <main className="min-h-screen overflow-x-clip bg-[#080000] pb-[2vw] text-white">
+        <ResumeMotion className="relative isolate w-full">
+          {/* ===== Hero: bingkai merah + video, seperti Contact ===== */}
+          <header
+            data-group
+            className={`${FRAME} flex min-h-svh flex-col justify-between gap-16 max-lg:pt-40 lg:pt-[13vw]`}
+          >
+            <Bg />
 
-        <ResumeMotion className="relative isolate z-10 mx-auto max-w-[1360px]">
-          {/* ===== Header ===== */}
-          <header data-group className="relative grid gap-y-10 md:grid-cols-12">
-            <Ornament
-              src="/resume-tribal.webp"
-              ratio={[1609, 707]}
-              className="left-1/2 top-[-4%] w-[min(120vw,1500px)] -translate-x-1/2 md:top-[-10%]"
-              imgClassName="opacity-35 drop-shadow-[0_0_70px_rgba(255,34,0,0.25)]"
-            />
-            <div className="md:col-span-3">
-              <Bracket>Resume</Bracket>
-              <p
-                data-anim="fade"
-                className="mt-10 font-switzer text-[14px] font-semibold leading-[1.15] tracking-[-0.01em]"
-              >
-                Afrian Pryo Sulistyanno
-                <br />
-                <span className="font-normal">
-                  Graphic Designer &amp; Junior Developer
-                </span>
-              </p>
-              <address
-                data-anim="lines"
-                className="mt-5 font-switzer text-[13px] not-italic leading-[1.3] text-white/55"
-              >
-                {EMAIL}
-                <br />
-                +62 882 3895 9665
-                <br />
-                @__afffr
-                <br />
-                Sinanggul, Mlonggo, Jepara
-                <br />
-                Jawa Tengah 59452
-              </address>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-5 md:grid-cols-3 lg:grid-cols-6">
+              <Info label="name">Afrian Pryo Sulistyanno</Info>
+              <Info label="role">Graphic Designer &amp; Junior Developer</Info>
+              <Info label="email">
+                <a
+                  href={`mailto:${EMAIL}`}
+                  className="break-all underline-offset-[0.2em] hover:underline focus-visible:underline focus-visible:outline-none"
+                >
+                  {EMAIL}
+                </a>
+              </Info>
+              <Info label="phone">
+                <a
+                  href="tel:+6288238959665"
+                  className="underline-offset-[0.2em] hover:underline focus-visible:underline focus-visible:outline-none"
+                >
+                  {PHONE}
+                </a>
+              </Info>
+              <Info label="instagram">@__afffr</Info>
+              <Info label="location">
+                Sinanggul, Mlonggo, Jepara, Jawa Tengah 59452
+              </Info>
             </div>
 
             <h1
-              data-anim="title"
-              className="font-acerok text-[clamp(84px,17vw,270px)] font-normal uppercase leading-[0.8] text-flame max-sm:text-[clamp(64px,17vw,84px)] md:col-span-9 md:text-right"
+              data-anim="fade"
+              className="whitespace-nowrap font-acerok text-[11vw] font-normal uppercase leading-[0.8] tracking-[-0.07em]"
             >
-              Resume
+              <span className="sr-only">Resume</span>
+              {Array.from(HERO_WORD).map((char, i) => {
+                const blur = (HERO_BLUR[i] ?? 0) * BLUR_STEP;
+                return (
+                  <span
+                    key={`${char}-${i}`}
+                    aria-hidden="true"
+                    className="inline-block"
+                    style={blur ? { filter: `blur(${blur}em)` } : undefined}
+                  >
+                    {char}
+                  </span>
+                );
+              })}
             </h1>
           </header>
 
@@ -305,31 +303,21 @@ export default function ResumePage() {
           <section
             data-group
             aria-labelledby="resume-about"
-            className="relative mt-28 grid gap-y-10 md:mt-40 md:grid-cols-12"
+            className="mt-24 grid gap-y-8 px-[6vw] md:mt-36 md:grid-cols-12 md:gap-x-4 lg:px-[2vw]"
           >
-            {/* Pegasus seperti di section Skills, di sisi kanan */}
-            <Ornament
-              src="/pegasus-skill.webp"
-              ratio={[753, 975]}
-              fade="y"
-              className="right-[2%] top-1/2 h-auto w-[min(34vw,420px)] -translate-y-1/2 max-md:right-[-12%] max-md:w-[62vw] max-md:opacity-30"
-              imgClassName="opacity-90"
-            />
-            <div className="md:col-span-3">
-              <Bracket>Tentang</Bracket>
-            </div>
-            <div className="md:col-span-8 md:col-start-5">
+            <Label>tentang</Label>
+            <div className="md:col-span-9">
               <Heading id="resume-about">
                 Masih belajar,
                 <br />
                 terus mencoba
               </Heading>
-              <div className="mt-12 max-w-[360px] md:ml-[10%] md:mt-16">
+              <div className="mt-8 max-w-[400px] md:mt-12">
                 <Prose>{about}</Prose>
                 <a
                   data-anim="fade"
                   href={`mailto:${EMAIL}`}
-                  className="mt-6 inline-block font-switzer text-[12px] font-bold uppercase tracking-[0.02em] text-white underline decoration-[1.5px] underline-offset-[5px] transition-colors hover:text-flame focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+                  className="mt-5 inline-block font-switzer text-[11px] font-bold uppercase tracking-[0.02em] text-white underline decoration-[1.5px] underline-offset-[5px] transition-colors hover:text-flame focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
                 >
                   Hubungi saya
                 </a>
@@ -341,19 +329,11 @@ export default function ResumePage() {
           <section
             data-group
             aria-labelledby="resume-experience"
-            className="relative mt-32 md:mt-48"
+            className="mt-28 px-[6vw] md:mt-40 lg:px-[2vw]"
           >
-            <Ornament
-              src="/lining-skill.webp"
-              ratio={[2880, 1104]}
-              className="left-1/2 top-[-6%] w-[min(150vw,1800px)] -translate-x-1/2 md:top-[-14%]"
-              imgClassName="opacity-40"
-            />
-            <div className="grid gap-y-10 md:grid-cols-12">
-              <div className="md:col-span-3">
-                <Bracket>Pengalaman</Bracket>
-              </div>
-              <div className="md:col-span-8 md:col-start-5">
+            <div className="grid gap-y-8 md:grid-cols-12 md:gap-x-4">
+              <Label>pengalaman</Label>
+              <div className="md:col-span-9">
                 <Heading id="resume-experience">
                   Proses bicara
                   <br />
@@ -363,34 +343,18 @@ export default function ResumePage() {
                 </Heading>
               </div>
             </div>
-            <Cases items={experiences} />
+            <Rows items={experiences} />
           </section>
 
           {/* ===== Pendidikan ===== */}
           <section
             data-group
             aria-labelledby="resume-education"
-            className="relative mt-24 md:mt-40"
+            className="mt-24 px-[6vw] md:mt-36 lg:px-[2vw]"
           >
-            <Ornament
-              src="/resume-tribal.webp"
-              ratio={[1609, 707]}
-              className="left-1/2 top-[-8%] w-[min(120vw,1500px)] -translate-x-1/2 md:top-[-18%]"
-              imgClassName="opacity-30 -scale-x-100 drop-shadow-[0_0_70px_rgba(255,34,0,0.2)]"
-            />
-            {/* Pilar Yunani, di tepi kanan, sebagai simbol "dasar" */}
-            <Ornament
-              src="/pillar-art-direction.webp"
-              ratio={[843, 2124]}
-              fade="y"
-              className="right-[-2%] top-[4%] w-[min(20vw,260px)] max-md:w-[34vw] max-md:opacity-50"
-              imgClassName="opacity-35"
-            />
-            <div className="grid gap-y-10 md:grid-cols-12">
-              <div className="md:col-span-3">
-                <Bracket>Pendidikan</Bracket>
-              </div>
-              <div className="md:col-span-8 md:col-start-5">
+            <div className="grid gap-y-8 md:grid-cols-12 md:gap-x-4">
+              <Label>pendidikan</Label>
+              <div className="md:col-span-9">
                 <Heading id="resume-education">
                   Dasar yang
                   <br />
@@ -398,68 +362,74 @@ export default function ResumePage() {
                 </Heading>
               </div>
             </div>
-            <Cases items={education} />
+            <Rows items={education} />
           </section>
 
           {/* ===== Software ===== */}
           <section
             data-group
             aria-labelledby="resume-software"
-            className="mt-24 grid gap-y-10 md:mt-40 md:grid-cols-12"
+            className="mt-24 grid gap-y-8 px-[6vw] md:mt-36 md:grid-cols-12 md:gap-x-4 lg:px-[2vw]"
           >
-            <div className="md:col-span-3">
-              <Bracket>Software</Bracket>
-            </div>
-            <div className="md:col-span-8 md:col-start-5">
+            <Label>software</Label>
+            <div className="md:col-span-9">
               <Heading id="resume-software">
                 Perangkat
                 <br />
                 sehari-hari
               </Heading>
-              <Prose className="mt-12 max-w-[360px] md:ml-[10%] md:mt-16">
-                {software}
-              </Prose>
+              <Prose className="mt-8 max-w-[400px] md:mt-12">{software}</Prose>
             </div>
           </section>
 
-          {/* ===== Unduh ===== */}
+          {/* ===== Unduh: bingkai merah penutup, sama seperti Contact ===== */}
           <section
             data-group
             aria-labelledby="resume-download"
-            className="relative mt-28 grid gap-y-8 md:mt-44 md:grid-cols-12"
+            className={`${FRAME} mx-[2vw] mt-28 flex min-h-[max(480px,65svh)] flex-col justify-between gap-16 md:mt-40`}
           >
-            {/* Ornamen kiri-kanan, sama dengan section Contact */}
-            <Ornament
-              src="/contact-ornament-left.webp"
-              ratio={[664, 341]}
-              className="left-[-6%] top-1/2 w-[min(42vw,520px)] -translate-y-1/2 max-md:w-[70vw] max-md:opacity-50"
-              imgClassName="opacity-70"
-            />
-            <Ornament
-              src="/contact-ornament-right.webp"
-              ratio={[663, 340]}
-              className="right-[-6%] top-1/2 w-[min(42vw,520px)] -translate-y-1/2 max-md:hidden"
-              imgClassName="opacity-70"
-            />
-            <div className="md:col-span-3">
-              <Bracket>Unduh</Bracket>
-            </div>
-            <div className="md:col-span-8 md:col-start-5">
-              <Heading id="resume-download">
-                Versi lengkap
-                <br />
-                dalam satu berkas
-              </Heading>
-              <div data-anim="fade" className="mt-12 md:ml-[10%]">
-                <CtaButton inline href="/resume.pdf" label="Unduh resume" />
-              </div>
+            <Bg />
+
+            <h2
+              id="resume-download"
+              data-anim="title"
+              className="font-acerok text-[clamp(26px,4.2vw,64px)] font-normal uppercase leading-[0.92] tracking-[-0.07em]"
+            >
+              Versi lengkap
+              <br />
+              dalam satu berkas
+            </h2>
+
+            <div className="flex items-end justify-between gap-6">
+              {/* Tombol sama persis dengan submit di Contact, termasuk ikon plus saat hover */}
+              <a
+                data-anim="fade"
+                href="/resume.pdf"
+                download
+                className="group flex h-11 items-center bg-white px-4 font-switzer text-base lowercase tracking-[-0.05em] text-[#e00000] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[1.82vw] lg:px-[0.6vw] lg:text-[0.8vw]"
+              >
+                unduh resume
+                <span
+                  aria-hidden="true"
+                  className="ml-0 block h-[10px] w-0 shrink-0 bg-current opacity-0 transition-all duration-300 group-hover:ml-1 group-hover:w-[10px] group-hover:opacity-100 group-focus-visible:ml-1 group-focus-visible:w-[10px] group-focus-visible:opacity-100 lg:h-[0.6vw] lg:group-hover:ml-[0.25vw] lg:group-hover:w-[0.6vw] lg:group-focus-visible:ml-[0.25vw] lg:group-focus-visible:w-[0.6vw]"
+                  style={{
+                    WebkitMaskImage: "url(/icon-custom/Plus.svg)",
+                    maskImage: "url(/icon-custom/Plus.svg)",
+                    WebkitMaskRepeat: "no-repeat",
+                    maskRepeat: "no-repeat",
+                    WebkitMaskPosition: "center",
+                    maskPosition: "center",
+                    WebkitMaskSize: "contain",
+                    maskSize: "contain",
+                  }}
+                />
+              </a>
+              <p data-anim="fade" className={`${SMALL} text-right`}>
+                <span className="block normal-case">Afrian Pryo Sulistyanno</span>
+                <span className="block opacity-70">resume 2026</span>
+              </p>
             </div>
           </section>
-
-          <footer className="mt-28 flex flex-col justify-between gap-1 font-switzer text-[12px] text-white/40 sm:flex-row">
-            <p>Afrian Pryo Sulistyanno</p>
-            <p>Resume 2026</p>
-          </footer>
         </ResumeMotion>
       </main>
     </>

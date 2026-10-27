@@ -1,6 +1,13 @@
 "use client";
 
-import { useRef, type CSSProperties, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+  type MouseEvent,
+} from "react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -9,9 +16,9 @@ import RunningTextSection from "@/components/RunningTextSection";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 const MAIL_TO = "annosulistyanno@gmail.com";
+const MAIL_SUBJECT = "Ajakan kolaborasi dari website";
 
 // Aset background (grain merah + figur jatuh + bintang) dari desain.
-// Simpan sebagai public/contact-bg.webp
 const BG_SRC = "/contact-bg.mp4";
 
 // Satuan blur per karakter (dalam em), supaya blur ikut skala ukuran font.
@@ -19,6 +26,30 @@ const BLUR_STEP = 0.012;
 
 // Tambahan blur (em) saat karakter masuk/keluar -> efek motion blur.
 const MOTION_BLUR = 0.2;
+
+/**
+ * Buka halaman email yang sudah terisi (tujuan: MAIL_TO).
+ * - Desktop: Gmail compose di tab baru (langsung jalan walau tidak ada aplikasi email default).
+ * - Mobile: mailto: supaya membuka aplikasi email bawaan.
+ * Popup yang diblokir browser otomatis jatuh ke mailto:.
+ */
+const openMail = (body: string) => {
+  const subject = encodeURIComponent(MAIL_SUBJECT);
+  const text = encodeURIComponent(body);
+  const mailto = `mailto:${MAIL_TO}?subject=${subject}&body=${text}`;
+
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isMobile) {
+    window.location.href = mailto;
+    return;
+  }
+
+  const gmail = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+    MAIL_TO
+  )}&su=${subject}&body=${text}`;
+  const win = window.open(gmail, "_blank", "noopener,noreferrer");
+  if (!win) window.location.href = mailto;
+};
 
 type HeadingWord = {
   text: string;
@@ -65,23 +96,107 @@ const HEADING: HeadingWord[] = [
 ];
 
 type InfoItem = {
-  lines: [string, string];
+  label: string;
+  value: string;
+  /** Kalau ada, value jadi link. Kosongkan kalau belum punya URL (mis. "./"). */
+  href?: string;
+  /** Email dibuka lewat openMail() agar langsung ke halaman email. */
+  isMail?: boolean;
+  /** Tampilkan jam live (zona waktu TIMEZONE) sebagai isi. */
+  live?: boolean;
   style: CSSProperties; // hanya berlaku di desktop (di mobile posisinya static)
   align?: "right";
 };
 
-// Teks kecil di tengah desain (placeholder dari desain, ganti dengan isi asli).
+// Teks kecil di tengah desain: kontak & sosial di kiri, info singkat di kanan.
+// Untuk linkedin & facebook isi href kalau sudah punya URL-nya.
 const INFO: InfoItem[] = [
-  { lines: ["contact me", "lorem ipsum dolor"], style: { left: "2%", top: "47.8%" } },
-  { lines: ["contact me", "lorem ipsum dolor"], style: { left: "2%", top: "51.8%" } },
-  { lines: ["contact me", "for"], style: { left: "13.3%", top: "47.8%" } },
-  { lines: ["contact me", "lorem ipsum dolor sit amet"], style: { left: "13.3%", top: "51.8%" } },
-  { lines: ["contact me", "lorem"], style: { left: "31.7%", top: "47.8%" } },
-  { lines: ["contact me", "lorem ipsum dolor"], style: { right: "17.5%", top: "48.4%" }, align: "right" },
-  { lines: ["contact me", "lorem ipsum dolor"], style: { right: "17.5%", top: "52.4%" }, align: "right" },
-  { lines: ["contact me", "for"], style: { right: "3%", top: "48.4%" }, align: "right" },
-  { lines: ["contact me", "lorem ipsum dolor sit amet"], style: { right: "3%", top: "52.4%" }, align: "right" },
+  {
+    label: "instagram",
+    value: "affr_",
+    href: "https://instagram.com/affr_",
+    style: { left: "2%", top: "47.8%" },
+  },
+  {
+    label: "github",
+    value: "AfrianPryo",
+    href: "https://github.com/AfrianPryo",
+    style: { left: "2%", top: "51.8%" },
+  },
+  {
+    label: "linkedin",
+    value: "./",
+    // href: "https://linkedin.com/in/...",
+    style: { left: "13.3%", top: "47.8%" },
+  },
+  {
+    label: "facebook",
+    value: "./",
+    // href: "https://facebook.com/...",
+    style: { left: "13.3%", top: "51.8%" },
+  },
+  {
+    label: "email",
+    value: MAIL_TO,
+    isMail: true,
+    style: { left: "31.7%", top: "47.8%" },
+  },
+  {
+    label: "status",
+    value: "open for projects",
+    style: { right: "17.5%", top: "48.4%" },
+    align: "right",
+  },
+  {
+    label: "response time",
+    value: "within 24 hours",
+    style: { right: "17.5%", top: "52.4%" },
+    align: "right",
+  },
+  {
+    label: "local time / wib",
+    value: "",
+    live: true,
+    style: { right: "3%", top: "48.4%" },
+    align: "right",
+  },
+  {
+    label: "language",
+    value: "indonesia, english",
+    style: { right: "3%", top: "52.4%" },
+    align: "right",
+  },
 ];
+
+// Zona waktu pemilik website (WIB / GMT+7).
+const TIMEZONE = "Asia/Jakarta";
+
+const clockFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: TIMEZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+
+/** Jam live sesuai TIMEZONE. State terpisah agar GSAP di Contact tidak ikut re-render. */
+function Clock() {
+  // Kosong dulu saat SSR/hydration supaya tidak mismatch, lalu diisi di client.
+  const [time, setTime] = useState("");
+
+  useEffect(() => {
+    const tick = () => setTime(clockFormatter.format(new Date()));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  return (
+    <span className="block normal-case tabular-nums">
+      {time || "--:--:--"} gmt+7
+    </span>
+  );
+}
 
 const charBlur = (el: Element) => Number((el as HTMLElement).dataset.blur ?? 0);
 
@@ -123,14 +238,13 @@ export default function Contact() {
           .fromTo(
             "[data-frame]",
             { autoAlpha: 0, scale: 0.95, transformOrigin: "50% 50%" },
-            { autoAlpha: 1, scale: 1, duration: 1.8, ease: "power3.out" },
+            { autoAlpha: 1, scale: 1, duration: 0.4, ease: "power3.out" },
             0
           )
-          // Background: hanya opacity + scale pelan (murni GPU, tanpa blur) -> mulus.
           .fromTo(
             "[data-bg]",
             { autoAlpha: 0, scale: 1.12 },
-            { autoAlpha: 1, scale: 1, duration: 3, ease: "power2.out" },
+            { autoAlpha: 1, scale: 1, duration: 1.2, ease: "power2.out" },
             0
           )
           // Kata heading menyapu masuk dari sisinya.
@@ -257,7 +371,7 @@ export default function Contact() {
 
         ScrollTrigger.create({
           trigger: root.current,
-          start: "top 75%",
+          start: "top 140%", // mulai sebelum masuk layar, jadi frame sudah tampil saat naik
           end: "bottom 30%",
           onEnter: playIn,
           onEnterBack: playIn,
@@ -269,165 +383,198 @@ export default function Contact() {
     { scope: root }
   );
 
-  // Tanpa backend: buka aplikasi email user dengan isi yang sudah terisi.
-  // Ganti dengan fetch("/api/contact", ...) kalau sudah punya endpoint.
+  // Submit form -> langsung membuka halaman email (Gmail di desktop, app email di mobile).
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const data = new FormData(e.currentTarget);
-    const email = String(data.get("email") ?? "").trim();
+    const form = e.currentTarget;
+    const email = String(new FormData(form).get("email") ?? "").trim();
     if (!email) return;
 
-    const body = `Halo, saya ingin bekerja sama.\n\nHubungi saya di: ${email}`;
-    window.location.href = `mailto:${MAIL_TO}?subject=${encodeURIComponent(
-      "Ajakan kolaborasi dari website"
-    )}&body=${encodeURIComponent(body)}`;
+    openMail(`Halo, saya ingin bekerja sama.\n\nHubungi saya di: ${email}`);
+    form.reset();
+  };
 
-    e.currentTarget.reset();
+  // Klik alamat email di teks kecil -> juga langsung buka halaman email.
+  const handleMailClick = (e: MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    openMail("Halo, saya ingin bekerja sama.\n\n");
   };
 
   return (
     <>
+      {/* -mt-[140svh] harus sama dengan CONTACT_OVERLAP (1.4) di Works.
+          z-20 WAJIB lebih tinggi dari z-10: Skills memberi section sesudahnya
+          (wrapper Works) `relative z-10`, jadi z-[1] membuat Contact tertimpa
+          Works (layar hitam) sampai Works lepas dari pin = gap 100vh. */}
       <section
         ref={root}
         id="contact"
         aria-labelledby="contact-heading"
-        className="w-full bg-[#080000] px-[2vw]"
+        className="relative z-20 -mt-[140svh] flex min-h-svh w-full flex-col justify-center bg-[#080000] px-[2vw]"
       >
-      <div
-        data-frame
-        className="relative isolate flex w-full flex-col justify-between gap-10 overflow-hidden bg-[#e00000] text-white will-change-transform max-lg:min-h-[680px] max-lg:px-[6vw] max-lg:py-[10vw] lg:block lg:aspect-[1366/803]"
-      >
-        {/* Background: grain merah + figur + bintang (sudah menyatu di aset).
-            Wrapper = parallax scroll, img = animasi entrance/exit (dipisah agar transform tidak bentrok). */}
         <div
-          data-bg-parallax
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 -z-10 will-change-transform"
+          data-frame
+          className="relative isolate flex w-full flex-col justify-between gap-10 overflow-hidden bg-[#e00000] text-white will-change-transform max-lg:min-h-[max(680px,100svh)] max-lg:px-[6vw] max-lg:py-[10vw] lg:block lg:aspect-[1366/803]"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <video
-            data-bg
-            src={BG_SRC}
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="metadata"
+          {/* Background: grain merah + figur + bintang (sudah menyatu di aset).
+            Wrapper = parallax scroll, video = animasi entrance/exit (dipisah agar transform tidak bentrok). */}
+          <div
+            data-bg-parallax
             aria-hidden="true"
+            className="pointer-events-none absolute inset-0 -z-10 will-change-transform"
+          >
+            <video
+              data-bg
+              src={BG_SRC}
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="metadata"
+              aria-hidden="true"
+              draggable={false}
+              className="h-full w-full select-none object-cover object-center"
+            />
+          </div>
+
+          {/* Heading */}
+          <h2
+            id="contact-heading"
+            className="relative z-10 font-acerok text-[10vw] font-normal uppercase leading-[0.92] tracking-[-0.07em] max-lg:flex max-lg:flex-wrap max-lg:gap-x-[0.28em] lg:absolute lg:inset-x-[2%] lg:top-[3%] lg:text-[6.8vw]"
+          >
+            <span className="sr-only">Work with me and make something</span>
+            {HEADING.map((word) => (
+              <span
+                key={word.text}
+                aria-hidden="true"
+                data-word
+                data-dir={word.dir}
+                className={`block whitespace-nowrap ${word.pos}`}
+              >
+                {Array.from(word.text).map((char, i) => {
+                  const blur = (word.blur[i] ?? 0) * BLUR_STEP;
+                  return (
+                    <span
+                      key={`${char}-${i}`}
+                      data-char
+                      data-blur={blur}
+                      className="inline-block"
+                      style={blur ? { filter: `blur(${blur}em)` } : undefined}
+                    >
+                      {char === " " ? "\u00a0" : char}
+                    </span>
+                  );
+                })}
+              </span>
+            ))}
+          </h2>
+
+          {/* Teks kecil di tengah: kontak & sosial */}
+          <div className="relative z-10 max-lg:grid max-lg:grid-cols-2 max-lg:gap-x-4 max-lg:gap-y-4 lg:contents">
+            {INFO.map((item) => {
+              const value = item.live ? (
+                <Clock />
+              ) : item.isMail ? (
+                <a
+                  href={`mailto:${MAIL_TO}`}
+                  onClick={handleMailClick}
+                  className="block normal-case underline-offset-[0.2em] hover:underline focus-visible:underline focus-visible:outline-none"
+                >
+                  {item.value}
+                </a>
+              ) : item.href ? (
+                <a
+                  href={item.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block normal-case underline-offset-[0.2em] hover:underline focus-visible:underline focus-visible:outline-none"
+                >
+                  {item.value}
+                </a>
+              ) : (
+                <span className="block normal-case">{item.value}</span>
+              );
+
+              return (
+                <p
+                  key={item.label}
+                  data-info
+                  style={item.style}
+                  className={`font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] max-lg:break-all lg:absolute lg:z-10 lg:whitespace-nowrap lg:text-[0.72vw] ${
+                    item.align === "right" ? "lg:text-right" : ""
+                  }`}
+                >
+                  <span className="block opacity-70">{item.label}</span>
+                  {value}
+                </p>
+              );
+            })}
+          </div>
+
+          {/* Form kiri bawah */}
+          <form
+            onSubmit={handleSubmit}
+            data-foot
+            className="relative z-10 flex flex-col gap-1 max-lg:w-full max-lg:max-w-[420px] lg:absolute lg:bottom-[3.6%] lg:left-[2%] lg:gap-[0.25vw]"
+          >
+            <label
+              htmlFor="contact-email"
+              className="font-switzer text-[11px] lowercase leading-none tracking-[-0.05em] lg:text-[0.65vw]"
+            >
+              your email
+            </label>
+            <div className="flex">
+              <input
+                id="contact-email"
+                name="email"
+                type="email"
+                required
+                autoComplete="email"
+                inputMode="email"
+                className="h-11 min-w-0 flex-1 border border-white/80 bg-transparent px-3 font-switzer text-base text-white outline-none focus:bg-white/10 lg:h-[1.82vw] lg:w-[14.6vw] lg:flex-none lg:px-[0.5vw] lg:text-[0.8vw]"
+              />
+              <button
+                type="submit"
+                className="group flex h-11 items-center bg-white px-4 font-switzer text-base lowercase tracking-[-0.05em] text-[#e00000] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[1.82vw] lg:px-[0.6vw] lg:text-[0.8vw]"
+              >
+                submit
+                {/* Icon plus: muncul di sisi kanan saat hover/focus */}
+                <span
+                  aria-hidden="true"
+                  className="ml-0 block h-[10px] w-0 shrink-0 bg-current opacity-0 transition-all duration-300 group-hover:ml-1 group-hover:w-[10px] group-hover:opacity-100 group-focus-visible:ml-1 group-focus-visible:w-[10px] group-focus-visible:opacity-100 lg:h-[0.6vw] lg:group-hover:ml-[0.25vw] lg:group-hover:w-[0.6vw] lg:group-focus-visible:ml-[0.25vw] lg:group-focus-visible:w-[0.6vw]"
+                  style={{
+                    WebkitMaskImage: "url(/icon-custom/Plus.svg)",
+                    maskImage: "url(/icon-custom/Plus.svg)",
+                    WebkitMaskRepeat: "no-repeat",
+                    maskRepeat: "no-repeat",
+                    WebkitMaskPosition: "center",
+                    maskPosition: "center",
+                    WebkitMaskSize: "contain",
+                    maskSize: "contain",
+                  }}
+                />
+              </button>
+            </div>
+          </form>
+
+          {/* Logo kanan bawah */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            data-foot
+            src="/ornament.svg"
+            alt=""
+            loading="lazy"
+            decoding="async"
             draggable={false}
-            className="h-full w-full select-none object-cover object-center"
+            className="pointer-events-none relative z-10 select-none brightness-0 invert max-lg:w-[22vw] max-lg:self-end lg:absolute lg:bottom-[4.7%] lg:right-[2.3%] lg:w-[6.1%]"
           />
         </div>
-
-        {/* Heading */}
-        <h2
-          id="contact-heading"
-          className="relative z-10 font-acerok text-[10vw] font-normal uppercase leading-[0.92] tracking-[-0.07em] max-lg:flex max-lg:flex-wrap max-lg:gap-x-[0.28em] lg:absolute lg:inset-x-[2%] lg:top-[3%] lg:text-[6.8vw]"
-        >
-          <span className="sr-only">Work with me and make something</span>
-          {HEADING.map((word) => (
-            <span
-              key={word.text}
-              aria-hidden="true"
-              data-word
-              data-dir={word.dir}
-              className={`block whitespace-nowrap ${word.pos}`}
-            >
-              {Array.from(word.text).map((char, i) => {
-                const blur = (word.blur[i] ?? 0) * BLUR_STEP;
-                return (
-                  <span
-                    key={`${char}-${i}`}
-                    data-char
-                    data-blur={blur}
-                    className="inline-block"
-                    style={blur ? { filter: `blur(${blur}em)` } : undefined}
-                  >
-                    {char === " " ? "\u00a0" : char}
-                  </span>
-                );
-              })}
-            </span>
-          ))}
-        </h2>
-
-        {/* Teks kecil di tengah */}
-        <div className="relative z-10 max-lg:grid max-lg:grid-cols-2 max-lg:gap-x-4 max-lg:gap-y-4 lg:contents">
-          {INFO.map((item, i) => (
-            <p
-              key={i}
-              data-info
-              style={item.style}
-              className={`font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] lg:absolute lg:z-10 lg:whitespace-nowrap lg:text-[0.72vw] ${
-                item.align === "right" ? "lg:text-right" : ""
-              }`}
-            >
-              <span className="block">{item.lines[0]}</span>
-              <span className="block">{item.lines[1]}</span>
-            </p>
-          ))}
-        </div>
-
-        {/* Form kiri bawah */}
-        <form
-          onSubmit={handleSubmit}
-          data-foot
-          className="relative z-10 flex flex-col gap-1 max-lg:w-full max-lg:max-w-[420px] lg:absolute lg:bottom-[3.6%] lg:left-[2%] lg:gap-[0.25vw]"
-        >
-          <label
-            htmlFor="contact-email"
-            className="font-switzer text-[11px] lowercase leading-none tracking-[-0.05em] lg:text-[0.65vw]"
-          >
-            your email
-          </label>
-          <div className="flex">
-            <input
-              id="contact-email"
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              inputMode="email"
-              className="h-11 min-w-0 flex-1 border border-white/80 bg-transparent px-3 font-switzer text-base text-white outline-none focus:bg-white/10 lg:h-[1.82vw] lg:w-[14.6vw] lg:flex-none lg:px-[0.5vw] lg:text-[0.8vw]"
-            />
-            <button
-              type="submit"
-              className="group flex h-11 items-center bg-white px-4 font-switzer text-base lowercase tracking-[-0.05em] text-[#e00000] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[1.82vw] lg:px-[0.6vw] lg:text-[0.8vw]"
-            >
-              submit
-              {/* Icon plus: muncul di sisi kanan saat hover/focus */}
-              <span
-                aria-hidden="true"
-                className="ml-0 block h-[10px] w-0 shrink-0 bg-current opacity-0 transition-all duration-300 group-hover:ml-1 group-hover:w-[10px] group-hover:opacity-100 group-focus-visible:ml-1 group-focus-visible:w-[10px] group-focus-visible:opacity-100 lg:h-[0.6vw] lg:group-hover:ml-[0.25vw] lg:group-hover:w-[0.6vw] lg:group-focus-visible:ml-[0.25vw] lg:group-focus-visible:w-[0.6vw]"
-                style={{
-                  WebkitMaskImage: "url(/icon-custom/Plus.svg)",
-                  maskImage: "url(/icon-custom/Plus.svg)",
-                  WebkitMaskRepeat: "no-repeat",
-                  maskRepeat: "no-repeat",
-                  WebkitMaskPosition: "center",
-                  maskPosition: "center",
-                  WebkitMaskSize: "contain",
-                  maskSize: "contain",
-                }}
-              />
-            </button>
-          </div>
-        </form>
-
-        {/* Logo kanan bawah */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          data-foot
-          src="/ornament.svg"
-          alt=""
-          loading="lazy"
-          decoding="async"
-          draggable={false}
-          className="pointer-events-none relative z-10 select-none brightness-0 invert max-lg:w-[22vw] max-lg:self-end lg:absolute lg:bottom-[4.7%] lg:right-[2.3%] lg:w-[6.1%]"
-        />
-      </div>
       </section>
-      <RunningTextSection />
+      {/* Dibungkus relative z-20: karena Contact ditarik jauh ke atas, bagian
+          di bawahnya ikut masuk ke area Works (sticky) dan harus berada di atasnya. */}
+      <div className="relative z-20">
+        <RunningTextSection />
+      </div>
     </>
   );
 }

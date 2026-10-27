@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
+import { stairClip } from "@/lib/stairClip";
 import ScrambleText from "./ScrambleText";
+
+gsap.registerPlugin(useGSAP);
 
 /**
  * Navbar terinspirasi dari productionportugal.com:
  * — link dibungkus bracket [ LABEL ]
  * — hover: bracket menyebar ke kiri/kanan + berubah warna accent (merah)
  * — animasi entrance: muncul dari atas satu-per-satu via GSAP (di-drive dari Hero.tsx)
- * — mobile: menu fullscreen (bg accent, teks besar bertumpuk) dengan bahasa
+ * — mobile: menu fullscreen (bg accent merah, teks putih, bracket redup) dengan
+ *   palet yang sama seperti section Contact (merah, putih, #080000) dan bahasa
  *   visual yang sama dengan desktop: bracket, uppercase Switzer, ScrambleText
  */
 
@@ -61,6 +67,48 @@ export default function Navbar({ isResumePage = false }: { isResumePage?: boolea
     };
   }, [menuOpen]);
 
+  // Tirai menu mobile: tangga merah yang sama dengan tirai di section Works
+  // (clip-path polygon, tumbuh dari kiri atas). Buka = maju, tutup = mundur.
+  const navRef = useRef<HTMLElement>(null);
+  const curtain = useRef({ p: 0 });
+  const lastClip = useRef("");
+
+  useGSAP(
+    () => {
+      const nav = navRef.current;
+
+      if (!nav) return;
+
+      const reduce = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      const apply = () => {
+        const clip = stairClip(curtain.current.p);
+
+        if (clip !== lastClip.current) {
+          lastClip.current = clip;
+          nav.style.clipPath = clip;
+        }
+      };
+
+      if (menuOpen) gsap.set(nav, { visibility: "visible" });
+
+      gsap.to(curtain.current, {
+        p: menuOpen ? 1 : 0,
+        // Easing tangga sudah ada di stairClip, jadi tween-nya linear.
+        ease: "none",
+        duration: reduce ? 0 : menuOpen ? 1.1 : 0.8,
+        overwrite: "auto",
+        onUpdate: apply,
+        onComplete: () => {
+          apply();
+          if (!menuOpen) gsap.set(nav, { visibility: "hidden" });
+        },
+      });
+    },
+    { dependencies: [menuOpen] }
+  );
+
   return (
     <header className="fixed inset-x-0 top-0 z-[60] flex items-center justify-between px-[1.8vw] pt-[0.1vw] font-switzer max-sm:px-3 max-sm:pt-2 pointer-events-none">
       {/*
@@ -69,17 +117,16 @@ export default function Navbar({ isResumePage = false }: { isResumePage?: boolea
         terpengaruh transform animasi GSAP milik elemen induk.
       */}
       <nav
+        ref={navRef}
         id="mobile-nav"
         aria-label="Navigasi utama"
         aria-hidden={!menuOpen}
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("a")) setMenuOpen(false);
         }}
-        className={`pointer-events-auto fixed inset-0 z-0 flex flex-col justify-end bg-flame px-3 pb-[max(20px,env(safe-area-inset-bottom))] pt-24 transition-[clip-path,visibility] duration-[0.7s] ease-[cubic-bezier(0.16,1,0.3,1)] md:hidden ${
-          menuOpen
-            ? "visible [clip-path:inset(0_0_0_0)]"
-            : "invisible [clip-path:inset(0_0_100%_0)]"
-        }`}
+        // visibility & clip-path dikendalikan GSAP (lihat tirai di atas).
+        style={{ clipPath: "polygon(0% 0%,0% 0%,0% 100%)" }}
+        className="pointer-events-auto invisible fixed inset-0 z-0 flex flex-col justify-end bg-flame px-3 pb-[max(20px,env(safe-area-inset-bottom))] pt-24 md:hidden"
       >
         {/* Hover/sentuh satu link → link lain nge-blur */}
         <ul className="group/list flex flex-col items-start">
@@ -92,14 +139,15 @@ export default function Navbar({ isResumePage = false }: { isResumePage?: boolea
                 href={link.href}
                 label={link.label}
                 open={menuOpen}
-                delay={menuOpen ? 140 + i * 55 : 0}
+                // Teks menunggu tangga menutupi bagian bawah layar dulu.
+                delay={menuOpen ? 480 + i * 55 : 0}
               />
             </li>
           ))}
         </ul>
       </nav>
 
-      {/* Logo */}
+      {/* Logo (selalu putih, sama seperti di navbar desktop dan section Contact) */}
       <a
         href={isResumePage ? "/" : "#"}
         aria-label="Beranda"
@@ -113,10 +161,8 @@ export default function Navbar({ isResumePage = false }: { isResumePage?: boolea
           alt=""
           width={1217}
           height={431}
-          className={`block h-auto w-full transition-[filter] duration-500 ${
-            menuOpen
-              ? "brightness-0 md:invert md:drop-shadow-[0_2px_12px_rgba(0,0,0,0.5)]"
-              : "brightness-0 invert drop-shadow-[0_2px_12px_rgba(0,0,0,0.5)]"
+          className={`block h-auto w-full brightness-0 invert transition-[filter] duration-500 ${
+            menuOpen ? "" : "drop-shadow-[0_2px_12px_rgba(0,0,0,0.5)]"
           }`}
         />
       </a>
@@ -154,11 +200,7 @@ export default function Navbar({ isResumePage = false }: { isResumePage?: boolea
           aria-expanded={menuOpen}
           aria-controls="mobile-nav"
           onClick={() => setMenuOpen((o) => !o)}
-          className={`font-switzer text-[12px] font-semibold uppercase leading-none tracking-tight transition-colors duration-500 focus-visible:outline-2 focus-visible:outline-offset-4 ${
-            menuOpen
-              ? "text-black focus-visible:outline-black"
-              : "text-white focus-visible:outline-white"
-          }`}
+          className="font-switzer text-[12px] font-semibold uppercase leading-none tracking-tight text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
         >
           [ {menuOpen ? "Tutup" : "Menu"} ]
         </button>
@@ -206,9 +248,10 @@ function BracketLink({
 
 /**
  * Link besar untuk menu fullscreen mobile.
- * Bahasa visual sama dengan desktop: bracket [ ] yang menyebar + berubah warna
- * saat disentuh/hover/fokus. Di mobile tidak ada warna flame di atas bg flame,
- * jadi bracket berubah dari hitam samar → putih.
+ * Bahasa visual sama dengan desktop dan section Contact: teks putih di atas
+ * merah, bracket redup (putih 40%) yang menyebar + berubah ke #080000 (warna
+ * gelap yang sama dengan latar section Contact) saat disentuh/hover/fokus.
+ * Flame tidak bisa dipakai karena latarnya sudah flame.
  * Teks muncul dengan efek "mask reveal" dari bawah (berurutan via `delay`).
  */
 function MobileLink({
@@ -227,23 +270,19 @@ function MobileLink({
       href={href}
       tabIndex={open ? 0 : -1}
       style={{ transitionDelay: `${delay}ms` }}
-      className={`group flex items-center gap-[0.08em] whitespace-nowrap font-switzer text-[min(14.5vw,9.6vh)] font-semibold uppercase leading-[0.95] tracking-[-0.04em] text-black transition-transform duration-[0.8s] ease-[cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none ${
+      className={`group flex items-center gap-[0.08em] whitespace-nowrap font-switzer text-[min(14.5vw,9.6vh)] font-semibold uppercase leading-[0.95] tracking-[-0.04em] text-white transition-transform duration-[0.8s] ease-[cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-none ${
         open ? "translate-y-0" : "translate-y-full"
       }`}
     >
       {/* Bracket buka */}
-      <span
-        className="inline-block font-semibold transition-all duration-[0.48s] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-x-[0.06em] group-hover:text-white group-active:-translate-x-[0.06em] group-active:text-white group-focus-visible:-translate-x-[0.06em] group-focus-visible:text-white text-black/35"
-      >
+      <span className="inline-block font-semibold text-white/40 transition-all duration-[0.48s] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:-translate-x-[0.06em] group-hover:text-[#080000] group-active:-translate-x-[0.06em] group-active:text-[#080000] group-focus-visible:-translate-x-[0.06em] group-focus-visible:text-[#080000]">
         [
       </span>
 
       <ScrambleText text={label} className="inline-block font-semibold" />
 
       {/* Bracket tutup */}
-      <span
-        className="inline-block font-semibold transition-all duration-[0.48s] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-[0.06em] group-hover:text-white group-active:translate-x-[0.06em] group-active:text-white group-focus-visible:translate-x-[0.06em] group-focus-visible:text-white text-black/35"
-      >
+      <span className="inline-block font-semibold text-white/40 transition-all duration-[0.48s] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:translate-x-[0.06em] group-hover:text-[#080000] group-active:translate-x-[0.06em] group-active:text-[#080000] group-focus-visible:translate-x-[0.06em] group-focus-visible:text-[#080000]">
         ]
       </span>
     </a>

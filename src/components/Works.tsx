@@ -17,6 +17,27 @@ import { PROJECTS, type Project, type ProjectCategory } from "@/lib/projects";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
+// Di mobile, bar alamat yang muncul/hilang mengubah window.innerHeight dan
+// memicu refresh di tengah scroll. Abaikan resize kecil itu.
+ScrollTrigger.config({ ignoreMobileResize: true });
+
+// Tinggi 1svh x 100 dalam px. Seluruh jarak scroll di CSS memakai svh, jadi
+// hitungan di JS juga harus memakai satuan yang sama (bukan window.innerHeight
+// yang berubah-ubah di mobile).
+function svhPx() {
+  const probe = document.createElement("div");
+
+  probe.style.cssText =
+    "position:fixed;left:0;top:0;width:0;height:100svh;visibility:hidden;pointer-events:none";
+  document.body.appendChild(probe);
+
+  const height = probe.offsetHeight;
+
+  probe.remove();
+
+  return height || window.innerHeight;
+}
+
 // Urutan kategori: proyek sekategori selalu berdekatan.
 const CATEGORY_ORDER: ProjectCategory[] = ["website", "design", "art"];
 
@@ -63,7 +84,15 @@ const ENTRY_SCREENS = 0.7;
 // COVER_SCREENS - COVER_LEAD di Skills.
 const STAIR_IN_SCREENS = 1.7;
 const BG_COLOR = "#e00000";
-const EXIT_SCREENS = 1;
+// Total scroll fase keluar. Bagian akhirnya (CONTACT_OVERLAP) dipakai Contact
+// untuk naik menimpa; animasi tangga hitam memakai sisanya
+// (EXIT_SCREENS - CONTACT_OVERLAP + ANIM_OVERLAP, minimal sekitar 0.5).
+const EXIT_SCREENS = 1.7;
+// Harus sama dengan margin negatif di Contact (-mt-[140svh] = 1.4).
+const CONTACT_OVERLAP = 1.4;
+// Animasi tangga hitam dibiarkan berjalan sebentar (layar) bersamaan dengan
+// Contact yang mulai naik, supaya tidak ada jeda layar kosong di antaranya.
+const ANIM_OVERLAP = 0.3;
 const EXIT_COLOR = "#000";
 const STAIR_COLS = 12;
 const STAIR_ROWS = 8;
@@ -595,13 +624,12 @@ export default function Works() {
 
       gsap.fromTo(
         chars,
-        { autoAlpha: 0, yPercent: 55 },
+        { autoAlpha: 0 },
         {
           autoAlpha: 1,
-          yPercent: 0,
           duration: 0.7,
           stagger: { each: 0.025, from: "center" },
-          ease: "power3.out",
+          ease: "power1.out",
           overwrite: "auto",
         }
       );
@@ -780,16 +808,14 @@ export default function Works() {
 
       // Rentang scroll section: masuk -> geser kartu -> keluar. Rasio ketiganya
       // dikunci saat dibuat supaya tetap proporsional saat resize.
+      const vh = svhPx();
       const cardsPx = () =>
-        Math.max(
-          1,
-          Math.round(
-            (TOTAL - 1) *
-              Math.max(window.innerHeight * SCROLL_PER_PROJECT, 320)
-          )
-        );
-      const entryUnits = (ENTRY_SCREENS * window.innerHeight) / cardsPx();
-      const exitUnits = (EXIT_SCREENS * window.innerHeight) / cardsPx();
+        Math.max(1, Math.round((TOTAL - 1) * Math.max(vh * SCROLL_PER_PROJECT, 320)));
+      const entryUnits = (ENTRY_SCREENS * vh) / cardsPx();
+      const exitUnits = (EXIT_SCREENS * vh) / cardsPx();
+      // Animasi keluar hanya memakai bagian awal; sisanya jeda sebelum Contact.
+      const animUnits =
+        ((EXIT_SCREENS - CONTACT_OVERLAP + ANIM_OVERLAP) * vh) / cardsPx();
       const totalUnits = entryUnits + 1 + exitUnits;
       const entryFrac = entryUnits / totalUnits;
       const cardsFrac = 1 / totalUnits;
@@ -893,30 +919,27 @@ export default function Works() {
         },
       });
 
-      // Fase masuk (0 .. entryUnits): kartu naik dan membesar bergantian,
-      // lalu teks kecil kiri-kanan menyusul.
+      // Fase masuk (0 .. entryUnits): kartu fade in bergantian, lalu teks kecil
+      // kiri-kanan menyusul (setelah tirai merah selesai).
       tl.fromTo(
         cards,
-        { autoAlpha: 0, y: 90, scale: 0.92 },
+        { autoAlpha: 0 },
         {
           autoAlpha: 1,
-          y: 0,
-          scale: 1,
           duration: entryUnits * 0.6,
           stagger: { amount: entryUnits * 0.4, from: "start" },
-          ease: "power3.out",
+          ease: "power1.out",
         },
         0
       );
       tl.fromTo(
         pSpans,
-        { autoAlpha: 0, y: 18 },
+        { autoAlpha: 0 },
         {
           autoAlpha: 1,
-          y: 0,
           duration: entryUnits * 0.4,
           stagger: { amount: entryUnits * 0.15, from: "start" },
-          ease: "power3.out",
+          ease: "power1.out",
         },
         entryUnits * 0.45
       );
@@ -943,17 +966,15 @@ export default function Works() {
         entryUnits
       );
 
-      // Fase keluar: isi memudar & naik, lalu tangga hitam menutup.
+      // Fase keluar: isi fade out, lalu tangga hitam menutup.
       const exitAt = entryUnits + 1;
 
       tl.to(
         layer,
         {
           autoAlpha: 0,
-          scale: 0.9,
-          yPercent: -6,
-          duration: exitUnits * 0.55,
-          ease: "power2.in",
+          duration: animUnits * 0.55,
+          ease: "power1.in",
         },
         exitAt
       );
@@ -961,10 +982,9 @@ export default function Works() {
         exitEls,
         {
           autoAlpha: 0,
-          y: -36,
-          duration: exitUnits * 0.4,
-          stagger: exitUnits * 0.06,
-          ease: "power2.in",
+          duration: animUnits * 0.4,
+          stagger: animUnits * 0.06,
+          ease: "power1.in",
         },
         exitAt
       );
@@ -972,11 +992,13 @@ export default function Works() {
         cover,
         {
           p: 1,
-          duration: exitUnits * 0.85,
+          duration: animUnits * 0.85,
           onUpdate: applyCover,
         },
-        exitAt + exitUnits * 0.15
+        exitAt + animUnits * 0.15
       );
+      // Pastikan timeline tetap sepanjang totalUnits (jeda di akhir untuk Contact).
+      tl.to({}, { duration: 0 }, totalUnits);
 
       stRef.current = tl.scrollTrigger ?? null;
       if (tl.scrollTrigger) sync(tl.scrollTrigger);
@@ -1017,7 +1039,7 @@ export default function Works() {
 
       // Tangga tumbuh selama STAIR_IN_SCREENS layar sebelum Works menempel.
       const stairStart = () =>
-        `top ${Math.round(window.innerHeight * STAIR_IN_SCREENS)}px`;
+        `top ${Math.round(svhPx() * STAIR_IN_SCREENS)}px`;
 
       ScrollTrigger.create({
         trigger: wrap,
@@ -1068,411 +1090,411 @@ export default function Works() {
           clipPath: "polygon(0% 0%,0% 0%,0% 100%)",
         }}
       />
-    <section
-      ref={rootRef}
-      id="works"
-      aria-label="Karya"
-      className="pointer-events-none invisible sticky top-0 isolate h-svh min-h-screen w-full overflow-hidden"
-    >
-      {/* Filter barrel distortion untuk deretan kartu (peta displacement dan
-          ukuran diisi dari JS). */}
-      <svg
-        aria-hidden="true"
-        width="0"
-        height="0"
-        className="pointer-events-none absolute"
+      <section
+        ref={rootRef}
+        id="works"
+        aria-label="Karya"
+        className="pointer-events-none invisible sticky top-0 isolate h-svh min-h-screen w-full overflow-hidden"
       >
-        <filter
-          id="works-barrel"
-          x="0"
-          y="0"
-          width="300"
-          height="225"
-          filterUnits="userSpaceOnUse"
-          primitiveUnits="userSpaceOnUse"
-          colorInterpolationFilters="sRGB"
+        {/* Filter barrel distortion untuk deretan kartu (peta displacement dan
+          ukuran diisi dari JS). */}
+        <svg
+          aria-hidden="true"
+          width="0"
+          height="0"
+          className="pointer-events-none absolute"
         >
-          <feImage
-            id="works-barrel-map"
+          <filter
+            id="works-barrel"
             x="0"
             y="0"
             width="300"
             height="225"
-            preserveAspectRatio="none"
-            result="map"
-          />
-          <feDisplacementMap
-            id="works-barrel-disp"
-            in="SourceGraphic"
-            in2="map"
-            scale="0"
-            xChannelSelector="R"
-            yChannelSelector="G"
-          />
-        </filter>
-      </svg>
-
-      {/* Jendela tetap setinggi layar; kartu yang bergeser dipotong di sini
-          supaya tidak keluar ke section lain. */}
-      <div
-        ref={stageRef}
-        className="absolute inset-0 overflow-hidden [--card-w:72vw] sm:[--card-w:min(52vw,calc(62svh*1.6))]"
-        style={{ contain: "paint" }}
-      >
-        {/* Layer lensa: seukuran stage, tempat filter barrel dipasang. */}
-        <div data-lens-layer className="absolute inset-0">
-          {/* Deretan kartu: dimulai dengan kartu pertama tepat di tengah. */}
-          <div
-            data-track
-            className="absolute left-0 top-0 flex h-full items-center will-change-transform"
-            style={
-              {
-                gap: CARD_GAP,
-                paddingLeft: "calc(50% - var(--card-w) / 2)",
-              } as CSSProperties
-            }
+            filterUnits="userSpaceOnUse"
+            primitiveUnits="userSpaceOnUse"
+            colorInterpolationFilters="sRGB"
           >
-            {SORTED_PROJECTS.map((project, index) => (
-              <button
-                key={project.slug}
-                type="button"
-                data-card
-                data-works-project
-                aria-haspopup={index === active ? "dialog" : undefined}
-                aria-current={index === active ? "true" : undefined}
-                aria-label={
-                  index === active
-                    ? `Buka detail ${project.title}`
-                    : `Tampilkan ${project.title}`
-                }
-                onClick={(event) =>
-                  index === active
-                    ? openProject(index, event.currentTarget)
-                    : goTo(index)
-                }
-                style={{
-                  width: "var(--card-w)",
-                  height: "calc(var(--card-w) / 1.6)",
-                }}
-                className="relative block shrink-0 cursor-pointer overflow-hidden rounded-[3px] bg-black/20 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.6)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-white"
+            <feImage
+              id="works-barrel-map"
+              x="0"
+              y="0"
+              width="300"
+              height="225"
+              preserveAspectRatio="none"
+              result="map"
+            />
+            <feDisplacementMap
+              id="works-barrel-disp"
+              in="SourceGraphic"
+              in2="map"
+              scale="0"
+              xChannelSelector="R"
+              yChannelSelector="G"
+            />
+          </filter>
+        </svg>
+
+        {/* Jendela tetap setinggi layar; kartu yang bergeser dipotong di sini
+          supaya tidak keluar ke section lain. */}
+        <div
+          ref={stageRef}
+          className="absolute inset-0 overflow-hidden [--card-w:72vw] sm:[--card-w:min(52vw,calc(62svh*1.6))]"
+          style={{ contain: "paint" }}
+        >
+          {/* Layer lensa: seukuran stage, tempat filter barrel dipasang. */}
+          <div data-lens-layer className="absolute inset-0">
+            {/* Deretan kartu: dimulai dengan kartu pertama tepat di tengah. */}
+            <div
+              data-track
+              className="absolute left-0 top-0 flex h-full items-center will-change-transform"
+              style={
+                {
+                  gap: CARD_GAP,
+                  paddingLeft: "calc(50% - var(--card-w) / 2)",
+                } as CSSProperties
+              }
+            >
+              {SORTED_PROJECTS.map((project, index) => (
+                <button
+                  key={project.slug}
+                  type="button"
+                  data-card
+                  data-works-project
+                  aria-haspopup={index === active ? "dialog" : undefined}
+                  aria-current={index === active ? "true" : undefined}
+                  aria-label={
+                    index === active
+                      ? `Buka detail ${project.title}`
+                      : `Tampilkan ${project.title}`
+                  }
+                  onClick={(event) =>
+                    index === active
+                      ? openProject(index, event.currentTarget)
+                      : goTo(index)
+                  }
+                  style={{
+                    width: "var(--card-w)",
+                    height: "calc(var(--card-w) / 1.6)",
+                  }}
+                  className="relative block shrink-0 cursor-pointer overflow-hidden rounded-[3px] bg-black/20 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.6)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-white"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={SLIDE_IMAGES[index][0].src}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    draggable={false}
+                    className="h-full w-full select-none object-cover object-center"
+                  />
+                  {/* Lapisan gelap: makin pekat untuk kartu yang jauh dari tengah */}
+                  <span
+                    aria-hidden="true"
+                    data-shade
+                    className="pointer-events-none absolute inset-0 bg-black opacity-0"
+                  />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Vinyet gelap di tepi layar */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-[5]"
+          style={{
+            background:
+              "radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.35) 100%)",
+          }}
+        />
+
+        {/* Judul proyek aktif: besar, di tengah, melintasi kartu */}
+        <div
+          aria-hidden="true"
+          data-exit
+          className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-[4vw]"
+        >
+          <div
+            ref={titleRef}
+            className="flex flex-wrap justify-center gap-x-[0.28em] text-center font-acerok text-[clamp(26px,5.2vw,92px)] uppercase leading-[1.05] tracking-[0.02em] text-white"
+            style={{ textShadow: "0 2px 28px rgba(0,0,0,0.4)" }}
+          >
+            {titleWords.map((word, wi) => (
+              <span
+                key={`${active}-${wi}`}
+                className="inline-flex whitespace-nowrap"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={SLIDE_IMAGES[index][0].src}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  draggable={false}
-                  className="h-full w-full select-none object-cover object-center"
-                />
-                {/* Lapisan gelap: makin pekat untuk kartu yang jauh dari tengah */}
-                <span
-                  aria-hidden="true"
-                  data-shade
-                  className="pointer-events-none absolute inset-0 bg-black opacity-0"
-                />
-              </button>
+                {Array.from(word).map((char, ci) => (
+                  <span key={ci} data-char className="inline-block">
+                    {char}
+                  </span>
+                ))}
+              </span>
             ))}
           </div>
         </div>
-      </div>
 
-      {/* Vinyet gelap di tepi layar */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[5]"
-        style={{
-          background:
-            "radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.35) 100%)",
-        }}
-      />
-
-      {/* Judul proyek aktif: besar, di tengah, melintasi kartu */}
-      <div
-        aria-hidden="true"
-        data-exit
-        className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-[4vw]"
-      >
-        <div
-          ref={titleRef}
-          className="flex flex-wrap justify-center gap-x-[0.28em] text-center font-acerok text-[clamp(26px,5.2vw,92px)] uppercase leading-[1.05] tracking-[0.02em] text-white"
-          style={{ textShadow: "0 2px 28px rgba(0,0,0,0.4)" }}
-        >
-          {titleWords.map((word, wi) => (
-            <span
-              key={`${active}-${wi}`}
-              className="inline-flex whitespace-nowrap"
-            >
-              {Array.from(word).map((char, ci) => (
-                <span key={ci} data-char className="inline-block">
-                  {char}
-                </span>
-              ))}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Deskripsi kecil proyek aktif (gaya sama dengan teks kecil di Contact).
+        {/* Deskripsi kecil proyek aktif (gaya sama dengan teks kecil di Contact).
           Desktop: kiri & kanan. Mobile (< 640px): atas (rata kiri) & bawah (rata kanan) kartu. */}
-      <p data-exit className="pointer-events-none absolute left-[2vw] top-[48%] z-10 max-w-[28vw] font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-white max-sm:top-[26%] max-sm:max-w-[60vw] lg:max-w-[16vw] lg:text-[0.72vw]">
-        <span className="block">{activeProject?.category}</span>
-        <span className="block">{activeProject?.description}</span>
-      </p>
-      <p data-exit className="pointer-events-none absolute right-[2vw] top-[48%] z-10 max-w-[28vw] text-right font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-white max-sm:top-auto max-sm:bottom-[26%] max-sm:max-w-[60vw] lg:max-w-[16vw] lg:text-[0.72vw]">
-        <span className="block">
-          {activeProject?.role ?? FALLBACK_ROLE[activeProject.category]}
-        </span>
-        {activeProject?.year && (
-          <span className="block">{activeProject.year}</span>
-        )}
-      </p>
+        <p data-exit className="pointer-events-none absolute left-[2vw] top-[48%] z-10 max-w-[28vw] font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-white max-sm:top-[26%] max-sm:max-w-[60vw] lg:max-w-[16vw] lg:text-[0.72vw]">
+          <span className="block">{activeProject?.category}</span>
+          <span className="block">{activeProject?.description}</span>
+        </p>
+        <p data-exit className="pointer-events-none absolute right-[2vw] top-[48%] z-10 max-w-[28vw] text-right font-switzer text-[10px] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-white max-sm:top-auto max-sm:bottom-[26%] max-sm:max-w-[60vw] lg:max-w-[16vw] lg:text-[0.72vw]">
+          <span className="block">
+            {activeProject?.role ?? FALLBACK_ROLE[activeProject.category]}
+          </span>
+          {activeProject?.year && (
+            <span className="block">{activeProject.year}</span>
+          )}
+        </p>
 
-      {/* Tangga hitam untuk animasi keluar: tumbuh dari kanan atas menutupi
+        {/* Tangga hitam untuk animasi keluar: tumbuh dari kanan atas menutupi
           section sebelum section berikutnya masuk. */}
-      <div
-        aria-hidden="true"
-        data-exit-cover
-        className="pointer-events-none absolute inset-0 z-[30]"
-        style={{
-          backgroundColor: EXIT_COLOR,
-          clipPath: "polygon(100% 0%,100% 0%,100% 100%)",
-        }}
-      />
+        <div
+          aria-hidden="true"
+          data-exit-cover
+          className="pointer-events-none absolute inset-0 z-[30]"
+          style={{
+            backgroundColor: EXIT_COLOR,
+            clipPath: "polygon(100% 0%,100% 0%,100% 100%)",
+          }}
+        />
 
-      {/* Sidebar detail proyek (detail final, tanpa halaman lanjutan),
+        {/* Sidebar detail proyek (detail final, tanpa halaman lanjutan),
           dirender di body supaya berada di atas navbar dan tidak ikut
           terpotong/ter-pin oleh section */}
-      {mounted &&
-        createPortal(
-          <>
-            <div
-              ref={scrimRef}
-              aria-hidden="true"
-              onClick={closeProject}
-              className="invisible fixed inset-0 z-[190] bg-black/60 opacity-0"
-            />
-            <aside
-              ref={panelRef}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="works-panel-title"
-              // Cegah smooth-scroll global (mis. Lenis) menelan scroll di sini.
-              data-lenis-prevent
-              onWheel={(event) => event.stopPropagation()}
-              onTouchMove={(event) => event.stopPropagation()}
-              style={{
-                overscrollBehavior: "contain",
-                WebkitOverflowScrolling: "touch",
-                scrollbarWidth: "thin",
-                scrollbarColor: "rgba(255,255,255,0.25) transparent",
-                // Efek blur pada background sidebar.
-                backdropFilter: "blur(16px) saturate(1.2)",
-                WebkitBackdropFilter: "blur(16px) saturate(1.2)",
-              }}
-              // shrink-0 pada semua anak: tanpa ini isi menyusut mengikuti
-              // tinggi layar dan panel tidak pernah bisa di-scroll.
-              className="invisible fixed left-0 top-0 z-[200] flex h-svh w-[min(520px,92vw)] flex-col gap-[clamp(18px,1.8vw,28px)] overflow-y-auto overflow-x-hidden border-r border-flame/20 bg-black/50 p-[clamp(20px,2vw,32px)] pb-[clamp(40px,4vw,64px)] opacity-0 [&>*]:shrink-0"
-            >
+        {mounted &&
+          createPortal(
+            <>
               <div
-                data-panel-item
-                className="flex items-center justify-between"
+                ref={scrimRef}
+                aria-hidden="true"
+                onClick={closeProject}
+                className="invisible fixed inset-0 z-[190] bg-black/60 opacity-0"
+              />
+              <aside
+                ref={panelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="works-panel-title"
+                // Cegah smooth-scroll global (mis. Lenis) menelan scroll di sini.
+                data-lenis-prevent
+                onWheel={(event) => event.stopPropagation()}
+                onTouchMove={(event) => event.stopPropagation()}
+                style={{
+                  overscrollBehavior: "contain",
+                  WebkitOverflowScrolling: "touch",
+                  scrollbarWidth: "thin",
+                  scrollbarColor: "rgba(255,255,255,0.25) transparent",
+                  // Efek blur pada background sidebar.
+                  backdropFilter: "blur(16px) saturate(1.2)",
+                  WebkitBackdropFilter: "blur(16px) saturate(1.2)",
+                }}
+                // shrink-0 pada semua anak: tanpa ini isi menyusut mengikuti
+                // tinggi layar dan panel tidak pernah bisa di-scroll.
+                className="invisible fixed left-0 top-0 z-[200] flex h-svh w-[min(520px,92vw)] flex-col gap-[clamp(18px,1.8vw,28px)] overflow-y-auto overflow-x-hidden border-r border-flame/20 bg-black/50 p-[clamp(20px,2vw,32px)] pb-[clamp(40px,4vw,64px)] opacity-0 [&>*]:shrink-0"
               >
-                <span className="font-switzer text-[clamp(12px,1.1vw,17px)] capitalize leading-none tracking-[-0.01em] text-white">
-                  {selectedProject?.category}
-                </span>
-                <button
-                  ref={closeRef}
-                  type="button"
-                  aria-label="Tutup detail proyek"
-                  onClick={closeProject}
-                  className="group -mr-2 flex h-10 w-10 items-center justify-center focus-visible:outline-none"
+                <div
+                  data-panel-item
+                  className="flex items-center justify-between"
                 >
-                  <Plus className="h-5 w-5 rotate-45 bg-flame/70 transition-all duration-500 ease-out group-hover:rotate-[135deg] group-hover:bg-flame group-focus-visible:rotate-[135deg] group-focus-visible:bg-flame" />
-                </button>
-              </div>
+                  <span className="font-switzer text-[clamp(12px,1.1vw,17px)] capitalize leading-none tracking-[-0.01em] text-white">
+                    {selectedProject?.category}
+                  </span>
+                  <button
+                    ref={closeRef}
+                    type="button"
+                    aria-label="Tutup detail proyek"
+                    onClick={closeProject}
+                    className="group -mr-2 flex h-10 w-10 items-center justify-center focus-visible:outline-none"
+                  >
+                    <Plus className="h-5 w-5 rotate-45 bg-flame/70 transition-all duration-500 ease-out group-hover:rotate-[135deg] group-hover:bg-flame group-focus-visible:rotate-[135deg] group-focus-visible:bg-flame" />
+                  </button>
+                </div>
 
-              {selectedProject && selectedImage && selected && (
-                <>
-                  {/* Foto utama + deretan thumbnail untuk berpindah foto */}
-                  <div data-panel-item className="flex flex-col gap-2">
-                    <div className="aspect-[16/10] w-full overflow-hidden bg-flame/10">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        key={`${selectedProject.slug}-${selected.image}`}
-                        src={selectedImage.src}
-                        alt={`${selectedProject.title} project preview`}
-                        decoding="async"
-                        draggable={false}
-                        className="h-full w-full select-none object-cover object-top"
-                      />
+                {selectedProject && selectedImage && selected && (
+                  <>
+                    {/* Foto utama + deretan thumbnail untuk berpindah foto */}
+                    <div data-panel-item className="flex flex-col gap-2">
+                      <div className="aspect-[16/10] w-full overflow-hidden bg-flame/10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          key={`${selectedProject.slug}-${selected.image}`}
+                          src={selectedImage.src}
+                          alt={`${selectedProject.title} project preview`}
+                          decoding="async"
+                          draggable={false}
+                          className="h-full w-full select-none object-cover object-top"
+                        />
+                      </div>
+
+                      {SLIDE_IMAGES[selected.project].length > 1 && (
+                        <div className="flex gap-2">
+                          {SLIDE_IMAGES[selected.project].map((image, i) => (
+                            <button
+                              key={i}
+                              type="button"
+                              aria-label={`Tampilkan foto ${i + 1} dari ${selectedProject.title}`}
+                              aria-pressed={i === selected.image}
+                              onClick={() => selectImage(i)}
+                              className={`aspect-[4/3] min-w-0 flex-1 cursor-pointer overflow-hidden bg-flame/10 outline-offset-2 transition-opacity duration-300 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-flame ${
+                                i === selected.image
+                                  ? "opacity-100 outline outline-1 outline-flame"
+                                  : "opacity-40"
+                              }`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={image.src}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                draggable={false}
+                                className="h-full w-full select-none object-cover object-top"
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    {SLIDE_IMAGES[selected.project].length > 1 && (
-                      <div className="flex gap-2">
-                        {SLIDE_IMAGES[selected.project].map((image, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            aria-label={`Tampilkan foto ${i + 1} dari ${selectedProject.title}`}
-                            aria-pressed={i === selected.image}
-                            onClick={() => selectImage(i)}
-                            className={`aspect-[4/3] min-w-0 flex-1 cursor-pointer overflow-hidden bg-flame/10 outline-offset-2 transition-opacity duration-300 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-flame ${
-                              i === selected.image
-                                ? "opacity-100 outline outline-1 outline-flame"
-                                : "opacity-40"
-                            }`}
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={image.src}
-                              alt=""
-                              loading="lazy"
-                              decoding="async"
-                              draggable={false}
-                              className="h-full w-full select-none object-cover object-top"
-                            />
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <h2
-                    id="works-panel-title"
-                    data-panel-item
-                    className="font-acerok text-[clamp(28px,3vw,44px)] font-normal uppercase leading-[1.05] tracking-normal text-white"
-                  >
-                    {selectedProject.title}
-                  </h2>
-
-                  <p
-                    data-panel-item
-                    className="font-switzer text-[clamp(15px,1.2vw,18px)] leading-[1.3] tracking-[-0.01em] text-white"
-                  >
-                    {selectedProject.description}
-                  </p>
-
-                  {/* Ringkasan panjang proyek (tampil kalau ada) */}
-                  {overviewParagraphs.length > 0 && (
-                    <section
+                    <h2
+                      id="works-panel-title"
                       data-panel-item
-                      aria-labelledby="works-panel-overview"
-                      className="flex flex-col gap-3 border-t border-flame/20 pt-4"
+                      className="font-acerok text-[clamp(28px,3vw,44px)] font-normal uppercase leading-[1.05] tracking-normal text-white"
                     >
-                      <h3
-                        id="works-panel-overview"
-                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
+                      {selectedProject.title}
+                    </h2>
+
+                    <p
+                      data-panel-item
+                      className="font-switzer text-[clamp(15px,1.2vw,18px)] leading-[1.3] tracking-[-0.01em] text-white"
+                    >
+                      {selectedProject.description}
+                    </p>
+
+                    {/* Ringkasan panjang proyek (tampil kalau ada) */}
+                    {overviewParagraphs.length > 0 && (
+                      <section
+                        data-panel-item
+                        aria-labelledby="works-panel-overview"
+                        className="flex flex-col gap-3 border-t border-flame/20 pt-4"
                       >
-                        Tentang proyek
-                      </h3>
-                      {overviewParagraphs.map((text, i) => (
-                        <p
-                          key={i}
-                          className="font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.4] tracking-[-0.01em] text-white"
+                        <h3
+                          id="works-panel-overview"
+                          className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
                         >
-                          {text}
-                        </p>
-                      ))}
-                    </section>
-                  )}
-
-                  {/* Info singkat: kategori, tahun, peran, klien, durasi */}
-                  {meta.length > 0 && (
-                    <dl
-                      data-panel-item
-                      className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-flame/20 pt-4 font-switzer text-[clamp(13px,1vw,15px)] leading-[1.3]"
-                    >
-                      {meta.map((item) => (
-                        <div key={item.label} className="contents">
-                          <dt className="text-white">{item.label}</dt>
-                          <dd className="text-white">{String(item.value)}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-
-                  {/* Kontribusi: apa yang dikerjakan di proyek ini */}
-                  {contributions.length > 0 && (
-                    <section
-                      data-panel-item
-                      aria-labelledby="works-panel-contribution"
-                      className="flex flex-col gap-3 border-t border-flame/20 pt-4"
-                    >
-                      <h3
-                        id="works-panel-contribution"
-                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
-                      >
-                        Kontribusi
-                      </h3>
-                      <ul className="flex flex-col gap-2.5 font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.35] text-white">
-                        {contributions.map((item) => (
-                          <li key={item} className="flex items-start gap-3">
-                            <Plus className="mt-[0.3em] h-3 w-3 shrink-0 bg-flame/70" />
-                            <span>{item}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  )}
-
-                  {/* Galeri foto proyek */}
-                  {galleryImages.length > 0 && (
-                    <section
-                      data-panel-item
-                      aria-labelledby="works-panel-gallery"
-                      className="flex flex-col gap-3 border-t border-flame/20 pt-4"
-                    >
-                      <h3
-                        id="works-panel-gallery"
-                        className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
-                      >
-                        Galeri
-                      </h3>
-                      <div className="grid grid-cols-2 gap-2">
-                        {galleryImages.map(({ ratio, src }, i) => (
-                          <div
-                            key={`${selectedProject.slug}-g${i}`}
-                            style={{ aspectRatio: String(ratio) }}
-                            className={`overflow-hidden bg-flame/10 ${
-                              ratio > 1.5 ? "col-span-2" : ""
-                            }`}
+                          Tentang proyek
+                        </h3>
+                        {overviewParagraphs.map((text, i) => (
+                          <p
+                            key={i}
+                            className="font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.4] tracking-[-0.01em] text-white"
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={src}
-                              alt={`${selectedProject.title} foto ${i + 1}`}
-                              loading="lazy"
-                              decoding="async"
-                              draggable={false}
-                              className="h-full w-full select-none object-cover object-top"
-                            />
+                            {text}
+                          </p>
+                        ))}
+                      </section>
+                    )}
+
+                    {/* Info singkat: kategori, tahun, peran, klien, durasi */}
+                    {meta.length > 0 && (
+                      <dl
+                        data-panel-item
+                        className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-flame/20 pt-4 font-switzer text-[clamp(13px,1vw,15px)] leading-[1.3]"
+                      >
+                        {meta.map((item) => (
+                          <div key={item.label} className="contents">
+                            <dt className="text-white">{item.label}</dt>
+                            <dd className="text-white">{String(item.value)}</dd>
                           </div>
                         ))}
-                      </div>
-                    </section>
-                  )}
+                      </dl>
+                    )}
 
-                  {/* Tautan proyek live (hanya kalau ada) */}
-                  {extra.url && (
-                    <a
-                      data-panel-item
-                      href={extra.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group flex items-center justify-between gap-4 border border-flame/40 px-5 py-4 font-acerok text-[clamp(13px,1.1vw,16px)] uppercase leading-none text-white transition-colors duration-300 hover:bg-flame hover:text-black focus-visible:bg-flame focus-visible:text-black focus-visible:outline-none"
-                    >
-                      <span>Kunjungi proyek</span>
-                      <span aria-hidden="true">↗</span>
-                    </a>
-                  )}
-                </>
-              )}
-            </aside>
-          </>,
-          document.body
-        )}
-    </section>
+                    {/* Kontribusi: apa yang dikerjakan di proyek ini */}
+                    {contributions.length > 0 && (
+                      <section
+                        data-panel-item
+                        aria-labelledby="works-panel-contribution"
+                        className="flex flex-col gap-3 border-t border-flame/20 pt-4"
+                      >
+                        <h3
+                          id="works-panel-contribution"
+                          className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
+                        >
+                          Kontribusi
+                        </h3>
+                        <ul className="flex flex-col gap-2.5 font-switzer text-[clamp(14px,1.1vw,16px)] leading-[1.35] text-white">
+                          {contributions.map((item) => (
+                            <li key={item} className="flex items-start gap-3">
+                              <Plus className="mt-[0.3em] h-3 w-3 shrink-0 bg-flame/70" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+
+                    {/* Galeri foto proyek */}
+                    {galleryImages.length > 0 && (
+                      <section
+                        data-panel-item
+                        aria-labelledby="works-panel-gallery"
+                        className="flex flex-col gap-3 border-t border-flame/20 pt-4"
+                      >
+                        <h3
+                          id="works-panel-gallery"
+                          className="font-acerok text-[clamp(12px,1vw,14px)] font-normal uppercase leading-none text-white"
+                        >
+                          Galeri
+                        </h3>
+                        <div className="grid grid-cols-2 gap-2">
+                          {galleryImages.map(({ ratio, src }, i) => (
+                            <div
+                              key={`${selectedProject.slug}-g${i}`}
+                              style={{ aspectRatio: String(ratio) }}
+                              className={`overflow-hidden bg-flame/10 ${
+                                ratio > 1.5 ? "col-span-2" : ""
+                              }`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={src}
+                                alt={`${selectedProject.title} foto ${i + 1}`}
+                                loading="lazy"
+                                decoding="async"
+                                draggable={false}
+                                className="h-full w-full select-none object-cover object-top"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {/* Tautan proyek live (hanya kalau ada) */}
+                    {extra.url && (
+                      <a
+                        data-panel-item
+                        href={extra.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group flex items-center justify-between gap-4 border border-flame/40 px-5 py-4 font-acerok text-[clamp(13px,1.1vw,16px)] uppercase leading-none text-white transition-colors duration-300 hover:bg-flame hover:text-black focus-visible:bg-flame focus-visible:text-black focus-visible:outline-none"
+                      >
+                        <span>Kunjungi proyek</span>
+                        <span aria-hidden="true">↗</span>
+                      </a>
+                    )}
+                  </>
+                )}
+              </aside>
+            </>,
+            document.body
+          )}
+      </section>
     </div>
   );
 }
