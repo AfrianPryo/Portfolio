@@ -38,6 +38,9 @@ const SKILLS = [
   },
 ];
 
+// Background GIF (taruh file di /public/skills-bg.gif).
+const BG_GIF = "/skills-bg.gif";
+
 // Foto yang mengikuti cursor: kemiringan dasar & batas kemiringan saat digerakkan.
 const PHOTO_TILT = -4;
 const PHOTO_TILT_MAX = 14;
@@ -145,7 +148,6 @@ export default function Skills() {
         section,
       );
       const captions = [...titles, ...descriptions];
-      const pegasus = section.querySelector<HTMLElement>(".skills-pegasus");
       const lastIndex = SKILLS.length - 1;
 
       const titleChars = titles.map((title) =>
@@ -353,9 +355,6 @@ export default function Skills() {
               start,
             );
 
-            // Pegasus ikut berkedip tipis saat pergantian.
-            if (pegasus) glitchTo(timeline, pegasus, start + SPAN * 0.3, 0.5);
-
             // Skill baru: wadah langsung tampil, lalu karakter title glitch
             // masuk dan baris deskripsi muncul dari kanan bawah.
             timeline.fromTo(
@@ -406,150 +405,80 @@ export default function Skills() {
     },
   );
 
-  // ===== Line drawing (lining) =====
-  // Terpisah dari effect di atas dan TANPA dependencies supaya animasi tidak
-  // ter-revert saat layout dihitung ulang. Gambar lebih lebar dari layar, jadi
-  // target reveal dihitung dari porsi gambar yang benar-benar terlihat; garis
-  // sampai ke tepi layar tepat di akhir animasi.
-  // Urutan: garis tengah "ditarik" dulu dari tengah ke kiri & kanan, lalu
-  // belah ketupat dan kotak terbuka ke atas-bawah dari garis itu.
+  // ===== Transisi warna + entrance background =====
+  // Experience berlatar hampir hitam (#0a0303) sedangkan GIF merah terang.
+  // Agar tidak ada "tepi" tajam, ada tiga lapis yang dibuat berurutan dan
+  // semuanya ber-scrub (dibalik otomatis saat scroll ke atas):
+  //  1) GIF memudar masuk dari gelap selagi section naik (top bottom -> top 15%)
+  //     dengan easing sine.inOut (tanpa awal/akhir yang tiba-tiba).
+  //  2) Scrim gelap di tepi atas (gradien ber-easing banyak titik) bertahan
+  //     selama section naik, lalu pelan-pelan lenyap SETELAH section menempel
+  //     (70% tinggi layar scroll tambahan), jadi merah "mekar" dari bawah.
+  //  3) Entrance bertempo (bukan scrub): GIF mulai agak diperbesar (zoom-in)
+  //     lalu mengendap ke ukuran normal begitu section mulai terlihat.
   useGSAP(
     () => {
       const section = sectionRef.current;
-      const lining = section?.querySelector<HTMLImageElement>(".skills-lining");
+      const bg = section?.querySelector<HTMLElement>(".skills-bg");
+      const zoom = section?.querySelector<HTMLElement>(".skills-bg-zoom");
+      const fade = section?.querySelector<HTMLElement>(".skills-top-fade");
 
-      if (!section || !lining) return;
-
-      const SHOWN = "inset(0% 0% 0% 0%)";
-      const DRAW_DELAY = 0.12; // jeda sebelum mulai menggambar (detik)
-      const AXIS_DURATION = 1.7; // garis tengah menjalar ke tepi layar
-      const UNFOLD_DELAY = 0.35; // bentuk mulai terbuka setelah garis jalan sebentar
-      const UNFOLD_DURATION = 1.6;
-      // Menghilang: langsung bergerak begitu terpicu (easing tanpa awal lambat).
-      const HIDE_UNFOLD_DURATION = 1.3;
-      const HIDE_AXIS_DELAY = 0.2;
-      const HIDE_AXIS_DURATION = 1.4;
-      // Posisi garis tengah pada gambar (% tinggi) dan setengah tebal pita
-      // yang terlihat di awal (hanya garis tengahnya).
-      const AXIS_Y = 49.27;
-      const AXIS_BAND = 0.5;
-
-      // Inset kiri/kanan (persen) saat garis tepat menyentuh tepi layar.
-      const getEdgeInset = () => {
-        const visible = Math.min(1, section.clientWidth / lining.offsetWidth);
-
-        return Math.max(0, ((1 - visible) / 2) * 100 - 0.5);
-      };
+      if (!section || !bg || !zoom || !fade) return;
 
       const media = gsap.matchMedia();
 
       media.add("(prefers-reduced-motion: no-preference)", () => {
-        // Progres h (lebar) dan v (tinggi) 0..1 dianimasikan lewat objek proxy,
-        // lalu clip-path dihitung simetris (kiri = kanan, atas/bawah mengikuti
-        // posisi garis tengah) di tiap frame. Dengan begitu tidak ada
-        // interpolasi string clip-path yang bisa membuat satu sisi langsung
-        // muncul.
-        const state = { h: 0, v: 0 };
-        let draw: gsap.core.Timeline | undefined;
-
-        const applyClip = () => {
-          const x = 50 - state.h * (50 - getEdgeInset());
-          const top = (1 - state.v) * (AXIS_Y - AXIS_BAND);
-          const bottom = (1 - state.v) * (100 - AXIS_Y - AXIS_BAND);
-
-          lining.style.clipPath = `inset(${top}% ${x}% ${bottom}% ${x}%)`;
-        };
-
-        gsap.set(lining, { autoAlpha: 1 });
-        applyClip();
-
-        let shown = false;
-
-        const toggleLining = (show: boolean) => {
-          if (shown === show) return;
-
-          shown = show;
-          draw?.kill();
-
-          // Menghilang: kebalikan urutan muncul (bentuk menutup ke garis tengah,
-          // lalu garis ditarik kembali ke tengah), tanpa delay dan tanpa awal
-          // lambat. Berangkat dari progres saat ini, jadi aman bila dipicu di
-          // tengah animasi menggambar.
-          if (!show) {
-            draw = gsap.timeline({ onUpdate: applyClip, onComplete: applyClip });
-            draw
-              .to(
-                state,
-                { v: 0, duration: HIDE_UNFOLD_DURATION, ease: "power2.out" },
-                0,
-              )
-              .to(
-                state,
-                { h: 0, duration: HIDE_AXIS_DURATION, ease: "power2.in" },
-                HIDE_AXIS_DELAY,
-              );
-            return;
-          }
-
-          draw = gsap.timeline({
-            delay: DRAW_DELAY,
-            onUpdate: applyClip,
-            onComplete: () => {
-              // Setelah selesai, lepas clip sepenuhnya (aman saat resize).
-              lining.style.clipPath = SHOWN;
+        gsap.fromTo(
+          bg,
+          { opacity: 0 },
+          {
+            opacity: 1,
+            ease: "sine.inOut",
+            scrollTrigger: {
+              trigger: section,
+              start: "top bottom",
+              end: "top 15%",
+              scrub: 0.6,
             },
-          });
-          draw
-            .to(
-              state,
-              { h: 1, duration: AXIS_DURATION, ease: "power3.out" },
-              0,
-            )
-            .to(
-              state,
-              { v: 1, duration: UNFOLD_DURATION, ease: "power2.inOut" },
-              UNFOLD_DELAY,
-            );
-        };
+          },
+        );
 
-        // Zona tampil: dari section mulai masuk sampai stage selesai di-pin.
-        ScrollTrigger.create({
-          trigger: section,
-          start: "top 80%",
-          end: "bottom bottom",
-          onEnter: () => toggleLining(true),
-          onEnterBack: () => toggleLining(true),
-          onLeave: () => toggleLining(false),
-        });
+        gsap.fromTo(
+          fade,
+          { opacity: 1 },
+          {
+            opacity: 0,
+            ease: "sine.inOut",
+            scrollTrigger: {
+              trigger: section,
+              start: "top top",
+              end: () => `+=${window.innerHeight * 0.7}`,
+              scrub: 0.6,
+              invalidateOnRefresh: true,
+            },
+          },
+        );
 
-        // Saat scroll ke ATAS, garis dihilangkan begitu stage mulai lepas dari
-        // pin (section turun dari atas layar), tidak menunggu sampai section
-        // keluar dari zona "top 80%" yang terlalu jauh. Saat scroll ke bawah,
-        // garis dimunculkan lagi di titik yang sama jika sempat disembunyikan.
-        ScrollTrigger.create({
-          trigger: section,
-          start: "top top",
-          end: "bottom bottom",
-          onEnter: () => toggleLining(true),
-          onLeave: () => toggleLining(false),
-          onLeaveBack: () => toggleLining(false),
-        });
-
-        // Halaman dimuat saat section sudah berada di zona tampil.
-        const rect = section.getBoundingClientRect();
-
-        if (
-          rect.top < window.innerHeight * 0.8 &&
-          rect.bottom > window.innerHeight
-        ) {
-          toggleLining(true);
-        }
-
-        return () => draw?.kill();
+        gsap.fromTo(
+          zoom,
+          { scale: 1.25 },
+          {
+            scale: 1,
+            duration: 2.4,
+            ease: "power3.out",
+            scrollTrigger: {
+              trigger: section,
+              start: "top 80%",
+              toggleActions: "play none none reverse",
+            },
+          },
+        );
       });
 
       media.add("(prefers-reduced-motion: reduce)", () => {
-        gsap.set(lining, { autoAlpha: 1, clipPath: SHOWN });
+        gsap.set(bg, { opacity: 1 });
+        gsap.set(zoom, { scale: 1 });
+        gsap.set(fade, { opacity: 0 });
       });
 
       return () => media.revert();
@@ -931,44 +860,39 @@ export default function Skills() {
       {/* Stage menempel (sticky) setinggi layar selama skill berganti.
           overflow-hidden ada di sini, bukan di section, supaya sticky tetap jalan. */}
       <div className="sticky top-0 h-svh min-h-screen w-full overflow-hidden">
-        {/* Lining latar (gambar webp di /public/lining-skill.webp). Wrapper
-            dibuat lebih lebar dari stage (191%; 230vw di mobile) supaya kotak
-            tengah ±50% lebar layar dan ujung diamond terpotong di tepi. Di layar
-            sangat lebar (mis. 21:9) lebarnya dibatasi 340svh supaya kotak tengah
-            tidak lebih tinggi dari stage; di 16:9 hasilnya sama seperti sebelumnya. Garis
-            tengah (49,27% tinggi gambar) tetap disejajarkan dengan tengah stage
-            lewat translate-y persentase, jadi tetap sejajar dengan title berapa
-            pun lebarnya. Di-reveal lewat clip-path oleh GSAP (class skills-lining). */}
+        {/* Background GIF seukuran stage. Objek orang berada di tengah gambar,
+            jadi object-cover + object-center menjaganya tetap di tengah layar
+            di semua rasio. */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 z-0 w-[min(191%,340svh)] -translate-x-1/2 -translate-y-[49.27%] max-sm:w-[230vw]"
+          className="skills-bg pointer-events-none absolute inset-0 z-0"
         >
-          <Image
-            src="/lining-skill.webp"
-            alt=""
-            width={2880}
-            height={1104}
-            unoptimized
-            draggable={false}
-            className="skills-lining invisible block h-auto w-full select-none"
-          />
-        </div>
-
-        {/* Pegasus di tengah. Wrapper luar = posisi (CSS), div dalam = yang
-            dianimasikan GSAP (glitch saat skill berganti). */}
-        <div className="pointer-events-none absolute left-1/2 top-[48%] z-10 aspect-[753/975] h-[42svh] -translate-x-1/2 -translate-y-1/2">
-          <div className="skills-pegasus relative h-full w-full will-change-transform">
-            <div className="relative h-full w-full max-sm:opacity-75">
-              <Image
-                src="/pegasus-skill.webp"
-                alt=""
-                fill
-                sizes="(max-width: 639px) 40vw, 30vw"
-                className="object-contain"
-              />
-            </div>
+          <div className="skills-bg-zoom absolute inset-0 will-change-transform">
+            <Image
+              src={BG_GIF}
+              alt=""
+              fill
+              unoptimized
+              priority
+              draggable={false}
+              sizes="100vw"
+              className="select-none object-cover object-center"
+            />
           </div>
         </div>
+
+        {/* Scrim gelap di tepi atas: menyambung warna Experience (#0a0303) ke
+            GIF. Gradien dengan banyak titik (kurva ease, bukan linear) supaya
+            tidak ada pita/garis batas yang terlihat. Memudar hilang lewat GSAP
+            setelah section menempel. */}
+        <div
+          aria-hidden="true"
+          className="skills-top-fade pointer-events-none absolute inset-x-0 top-0 z-[5] h-[70svh]"
+          style={{
+            background:
+              "linear-gradient(to bottom, rgba(10,3,3,1) 0%, rgba(10,3,3,0.987) 8%, rgba(10,3,3,0.953) 15.5%, rgba(10,3,3,0.894) 22.5%, rgba(10,3,3,0.815) 29%, rgba(10,3,3,0.725) 35.5%, rgba(10,3,3,0.627) 41.5%, rgba(10,3,3,0.529) 47%, rgba(10,3,3,0.431) 53%, rgba(10,3,3,0.333) 59%, rgba(10,3,3,0.243) 65%, rgba(10,3,3,0.162) 71%, rgba(10,3,3,0.094) 77.5%, rgba(10,3,3,0.041) 84.5%, rgba(10,3,3,0.012) 92%, rgba(10,3,3,0) 100%)",
+          }}
+        />
 
         {/* Filter barrel distortion untuk foto yang mengikuti cursor (peta
             displacement dan ukuran diisi dari JS). */}
@@ -1009,7 +933,7 @@ export default function Skills() {
         </svg>
 
         {/* Foto yang mengikuti cursor (dummy dulu). Layer = seukuran stage, tempat
-            filter lensa barrel (hanya foto yang melewatinya, teks/pegasus/lining
+            filter lensa barrel (hanya foto yang melewatinya, teks/background
             tidak). Wrapper foto = posisi, miring & perspektif (GSAP quickTo),
             inner = muncul/hilang, frame = bingkai, slide = satu foto per skill (image stretch saat
             scroll). Tinta merah dari overlay multiply supaya foto asli nanti
@@ -1044,19 +968,20 @@ export default function Skills() {
           </div>
         </div>
 
-        {/* Title (kiri): semua skill menumpuk di sel grid yang sama, menempel
-            dari ATAS supaya baris pertama selalu sejajar dengan deskripsi.
-            Mobile: rata tengah. */}
+        {/* Title (TEPI KIRI): rata kiri, menempel di tepi kiri layar. Semua skill
+            menumpuk di sel grid yang sama, menempel dari ATAS supaya baris
+            pertama selalu sejajar dengan deskripsi. Mobile: rata tengah di
+            atas objek. */}
         <div
           aria-live="polite"
-          className="absolute left-[7%] top-[47%] z-20 grid w-[34%] max-sm:left-6 max-sm:top-[14%] max-sm:w-[calc(100%-3rem)] max-sm:text-center"
+          className="absolute left-[4%] top-[47%] z-20 grid w-[34%] text-left max-sm:left-6 max-sm:top-[14%] max-sm:w-[calc(100%-3rem)] max-sm:text-center"
         >
           {SKILLS.map((skill, index) => (
             <h3
               key={skill.title}
               aria-hidden={index !== activeIndex}
               aria-label={skill.title}
-              className="skills-title col-start-1 row-start-1 font-acerok text-[clamp(24px,3.2vw,62px)] font-normal uppercase leading-[0.92] tracking-[-0.07em] text-flame max-sm:text-center max-sm:text-[clamp(26px,8vw,40px)]"
+              className="skills-title col-start-1 row-start-1 font-acerok text-[clamp(24px,3.2vw,62px)] font-normal uppercase leading-[0.92] tracking-[-0.07em] text-left text-flame max-sm:text-center max-sm:text-[clamp(26px,8vw,40px)]"
             >
               <span aria-hidden="true" className="block">
                 {skill.title.split(" ").map((word, wordIndex, words) => (
@@ -1079,17 +1004,18 @@ export default function Skills() {
           ))}
         </div>
 
-        {/* Deskripsi (kanan): rata kiri, kolom sempit sehingga terpecah jadi
-            beberapa baris pendek. Mobile: rata tengah. */}
+        {/* Deskripsi (TEPI KANAN): rata kanan, menempel di tepi kanan layar,
+            kolom sempit sehingga terpecah jadi beberapa baris pendek.
+            Mobile: rata tengah di bawah objek. */}
         <div
           aria-live="polite"
-          className="absolute left-[66%] top-[47.5%] z-20 grid w-[27%] max-sm:bottom-[12%] max-sm:left-6 max-sm:top-auto max-sm:w-[calc(100%-3rem)] max-sm:text-center"
+          className="absolute right-[4%] top-[47.5%] z-20 grid w-[27%] max-sm:bottom-[12%] max-sm:left-6 max-sm:right-auto max-sm:top-auto max-sm:w-[calc(100%-3rem)] max-sm:text-center"
         >
           {SKILLS.map((skill, index) => (
             <p
               key={skill.title}
               aria-hidden={index !== activeIndex}
-              className="skills-desc col-start-1 row-start-1 text-left font-switzer text-[clamp(11px,1.2vw,24px)] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-flame max-sm:text-center max-sm:text-[13px]"
+              className="skills-desc col-start-1 row-start-1 text-right font-switzer text-[clamp(11px,1.2vw,24px)] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-flame max-sm:text-center max-sm:text-[13px]"
             >
               <span className="block">
                 {skill.description.split(" ").map((word, wordIndex, words) => (

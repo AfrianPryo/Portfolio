@@ -71,6 +71,16 @@ const BARREL_GAIN = 0.16;
 // Kecepatan respons lensa (makin besar makin cepat mengikuti/mengendur).
 const BARREL_RESPONSE = 7;
 
+// ---- Background foto proyek aktif (blur + transparan) ----
+// Foto proyek yang sedang di tengah dipakai sebagai latar, dikaburkan dan
+// dibuat transparan. Supaya ringan, blur-nya TIDAK memakai CSS filter di
+// layar penuh: foto diperkecil dulu jadi thumbnail kecil (BG_TINY_WIDTH px)
+// lewat canvas, lalu diperbesar oleh browser (upscale otomatis = kabur).
+// Hasilnya di-cache, jadi tiap proyek hanya diproses sekali.
+const BG_OPACITY = 0.5;
+const BG_FADE = 0.9; // detik, crossfade antar proyek
+const BG_TINY_WIDTH = 320;
+
 // ---- Transisi masuk & keluar section ----
 // Masuk: section ini menempel tepat di atas layar merah penuh dari akhir
 // Skills (warnanya sama), lalu elemen-elemennya muncul di latar itu. Keluar:
@@ -285,6 +295,116 @@ const SLIDE_IMAGES: DummyImage[][] = (() => {
   return result;
 })();
 
+// Thumbnail kecil (hasil perkecilan canvas) untuk background blur per proyek.
+// Di-cache; kalau gambar tidak bisa diproses (mis. lintas origin), pakai
+// sumber aslinya sebagai cadangan.
+const tinyBgCache = new Map<number, string>();
+const tinyBgPending = new Map<number, Promise<string>>();
+
+function getTinyBg(index: number): Promise<string> {
+  const cached = tinyBgCache.get(index);
+
+  if (cached) return Promise.resolve(cached);
+
+  const pending = tinyBgPending.get(index);
+
+  if (pending) return pending;
+
+  const src = SLIDE_IMAGES[index]?.[0]?.src ?? "";
+
+  if (!src) return Promise.resolve("");
+
+  const promise = new Promise<string>((resolve) => {
+    const img = new window.Image();
+
+    img.decoding = "async";
+    img.onload = () => {
+      try {
+        const ratio = img.naturalHeight / Math.max(img.naturalWidth, 1) || 0.625;
+        const w = BG_TINY_WIDTH;
+        const h = Math.max(1, Math.round(w * ratio));
+
+        // 1) Perkecil BERTAHAP (maks. setengah per langkah) supaya tidak
+        //    bergerigi/aliasing seperti saat langsung dikecilkan sekali jalan.
+        let source: CanvasImageSource = img;
+        let sw = img.naturalWidth || w;
+        let sh = img.naturalHeight || h;
+
+        while (sw / 2 > w) {
+          const nw = Math.round(sw / 2);
+          const nh = Math.round(sh / 2);
+          const step = document.createElement("canvas");
+
+          step.width = nw;
+          step.height = nh;
+
+          const stepCtx = step.getContext("2d");
+
+          if (!stepCtx) throw new Error("no 2d context");
+
+          stepCtx.imageSmoothingQuality = "high";
+          stepCtx.drawImage(source, 0, 0, nw, nh);
+          source = step;
+          sw = nw;
+          sh = nh;
+        }
+
+        // 2) Blur sungguhan di canvas (sekali saja, lalu di-cache). Gambar
+        //    digambar sedikit lebih besar (pad) supaya tepinya tidak gelap
+        //    akibat blur.
+        const canvas = document.createElement("canvas");
+
+        canvas.width = w;
+        canvas.height = h;
+
+        const ctx = canvas.getContext("2d");
+
+        if (!ctx) throw new Error("no 2d context");
+
+        ctx.imageSmoothingQuality = "high";
+
+        const pad = Math.round(w * 0.04);
+
+        if (typeof ctx.filter === "string") {
+          ctx.filter = `blur(${Math.max(2, Math.round(w * 0.012))}px)`;
+          ctx.drawImage(source, -pad, -pad, w + pad * 2, h + pad * 2);
+        } else {
+          // Browser tanpa ctx.filter (mis. Safari lama): kaburkan dengan
+          // memperkecil sangat jauh lalu memperbesar lagi.
+          const soft = document.createElement("canvas");
+
+          soft.width = Math.max(8, Math.round(w / 8));
+          soft.height = Math.max(8, Math.round(h / 8));
+
+          const softCtx = soft.getContext("2d");
+
+          if (!softCtx) throw new Error("no 2d context");
+
+          softCtx.imageSmoothingQuality = "high";
+          softCtx.drawImage(source, 0, 0, soft.width, soft.height);
+          ctx.drawImage(soft, -pad, -pad, w + pad * 2, h + pad * 2);
+        }
+
+        const url = canvas.toDataURL("image/jpeg", 0.82);
+
+        tinyBgCache.set(index, url);
+        resolve(url);
+      } catch {
+        tinyBgCache.set(index, src);
+        resolve(src);
+      }
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  }).finally(() => {
+    tinyBgPending.delete(index);
+  });
+
+  tinyBgPending.set(index, promise);
+
+  return promise;
+}
+
 // Foto tambahan untuk galeri di sidebar (di luar foto pada kartu slider).
 // Pola rasio diputar per proyek supaya tiap galeri terasa berbeda.
 // Dibuat malas (saat proyek dibuka) dan di-cache.
@@ -353,6 +473,10 @@ export default function Works() {
   const activeRef = useRef(0);
   const titleRef = useRef<HTMLDivElement>(null);
   const stRef = useRef<ScrollTrigger | null>(null);
+  // Dua lapisan background untuk crossfade: yang mana sedang tampil, dan
+  // token untuk membuang hasil async yang sudah usang.
+  const bgFlipRef = useRef(0);
+  const bgTokenRef = useRef(0);
   // Porsi awal rentang scroll (0..1) yang dipakai menggeser kartu; sisanya
   // dipakai animasi keluar.
   const cardsRangeRef = useRef({ from: 0, span: 1 });
@@ -510,6 +634,7 @@ export default function Works() {
   // Gambar 3 kartu pertama tidak lagi "eager" (Works jauh di bawah Hero, jadi
   // tidak boleh berebut bandwidth dengan konten awal). Sebagai gantinya dimuat
   // ke cache saat browser idle supaya sudah siap sebelum Works terlihat.
+  // Thumbnail background proyek pertama ikut disiapkan di sini.
   useEffect(() => {
     const w = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
@@ -521,6 +646,7 @@ export default function Works() {
         pre.decoding = "async";
         pre.src = SLIDE_IMAGES[i][0].src;
       }
+      void getTinyBg(0);
     };
     if (w.requestIdleCallback) {
       const id = w.requestIdleCallback(warm, { timeout: 4000 });
@@ -534,6 +660,60 @@ export default function Works() {
   useEffect(() => {
     if (open) panelRef.current?.scrollTo({ top: 0 });
   }, [open, selected?.project]);
+
+  // Background: crossfade ke foto proyek yang sedang di tengah. Dua <img>
+  // bergantian (A/B); yang baru memudar masuk sambil yang lama memudar keluar.
+  // Hasil async yang sudah usang (proyek keburu berganti) dibuang lewat token.
+  useGSAP(
+    () => {
+      const root = rootRef.current;
+
+      if (!root) return;
+
+      const layers = gsap.utils.toArray<HTMLImageElement>(
+        "[data-bg-layer]",
+        root
+      );
+
+      if (layers.length < 2) return;
+
+      const reduce = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+      const token = (bgTokenRef.current += 1);
+
+      getTinyBg(active).then((url) => {
+        if (!url || token !== bgTokenRef.current) return;
+
+        const prevEl = layers[bgFlipRef.current];
+        const nextEl = layers[bgFlipRef.current ^ 1];
+
+        bgFlipRef.current ^= 1;
+        nextEl.src = url;
+
+        const duration = reduce ? 0 : BG_FADE;
+
+        gsap.to(nextEl, {
+          opacity: BG_OPACITY,
+          duration,
+          ease: "sine.inOut",
+          overwrite: "auto",
+        });
+        gsap.to(prevEl, {
+          opacity: 0,
+          duration,
+          ease: "sine.inOut",
+          overwrite: "auto",
+        });
+      });
+
+      // Siapkan thumbnail tetangga supaya pergantian berikutnya instan.
+      [active - 1, active + 1].forEach((i) => {
+        if (i >= 0 && i < TOTAL) void getTinyBg(i);
+      });
+    },
+    { dependencies: [active], scope: rootRef }
+  );
 
   // Animasi sidebar: masuk dari kiri, isinya menyusul berurutan.
   useGSAP(
@@ -648,6 +828,7 @@ export default function Works() {
       const stage = stageRef.current;
       const track = stage?.querySelector<HTMLElement>("[data-track]");
       const layer = stage?.querySelector<HTMLElement>("[data-lens-layer]");
+      const bgWrap = root?.querySelector<HTMLElement>("[data-works-bg]");
       const barrel = root?.querySelector<SVGFilterElement>("#works-barrel");
       const map =
         root?.querySelector<SVGFEImageElement>("#works-barrel-map");
@@ -715,7 +896,7 @@ export default function Works() {
       measure();
 
       // ----- Barrel distortion (lensa seluas stage, hanya untuk deretan kartu;
-      // judul dan label tidak ikut melengkung) -----
+      // judul, label, dan background tidak ikut melengkung) -----
       let teardownLens: (() => void) | undefined;
 
       if (barrel && map && disp && !reduce && !lowPower) {
@@ -919,8 +1100,17 @@ export default function Works() {
         },
       });
 
-      // Fase masuk (0 .. entryUnits): kartu fade in bergantian, lalu teks kecil
-      // kiri-kanan menyusul (setelah tirai merah selesai).
+      // Fase masuk (0 .. entryUnits): background blur memudar masuk, kartu fade
+      // in bergantian, lalu teks kecil kiri-kanan menyusul (setelah tirai merah
+      // selesai).
+      if (bgWrap) {
+        tl.fromTo(
+          bgWrap,
+          { autoAlpha: 0 },
+          { autoAlpha: 1, duration: entryUnits * 0.6, ease: "power1.out" },
+          0
+        );
+      }
       tl.fromTo(
         cards,
         { autoAlpha: 0 },
@@ -978,6 +1168,17 @@ export default function Works() {
         },
         exitAt
       );
+      if (bgWrap) {
+        tl.to(
+          bgWrap,
+          {
+            autoAlpha: 0,
+            duration: animUnits * 0.55,
+            ease: "power1.in",
+          },
+          exitAt
+        );
+      }
       tl.to(
         exitEls,
         {
@@ -1096,6 +1297,29 @@ export default function Works() {
         aria-label="Karya"
         className="pointer-events-none invisible sticky top-0 isolate h-svh min-h-screen w-full overflow-hidden"
       >
+        {/* Background: foto proyek aktif, kabur dan transparan, di atas tirai
+            merah dan di bawah semua isi. Dua <img> kecil (thumbnail hasil
+            perkecilan canvas) bergantian untuk crossfade; diperbesar oleh
+            browser sehingga tampak blur tanpa filter berat. Berada di luar
+            layer lensa, jadi tidak ikut kena barrel distortion. */}
+        <div
+          aria-hidden="true"
+          data-works-bg
+          className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+        >
+          {[0, 1].map((n) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={n}
+              data-bg-layer
+              alt=""
+              decoding="async"
+              draggable={false}
+              className="absolute inset-0 h-full w-full scale-110 select-none object-cover opacity-0 will-change-[opacity]"
+            />
+          ))}
+        </div>
+
         {/* Filter barrel distortion untuk deretan kartu (peta displacement dan
           ukuran diisi dari JS). */}
         <svg
@@ -1176,7 +1400,13 @@ export default function Works() {
                     width: "var(--card-w)",
                     height: "calc(var(--card-w) / 1.6)",
                   }}
-                  className="relative block shrink-0 cursor-pointer overflow-hidden rounded-[3px] bg-black/20 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.6)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-white"
+                  // Bayangan besar itu mahal dilukis (apalagi di dalam layer
+                  // berfilter), jadi hanya kartu di tengah dan tetangganya.
+                  className={`relative block shrink-0 cursor-pointer overflow-hidden rounded-[3px] bg-black/20 focus-visible:outline focus-visible:outline-1 focus-visible:outline-white ${
+                    Math.abs(index - active) <= 1
+                      ? "shadow-[0_24px_60px_-16px_rgba(0,0,0,0.6)]"
+                      : ""
+                  }`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -1184,6 +1414,7 @@ export default function Works() {
                     alt=""
                     loading="lazy"
                     decoding="async"
+                    fetchPriority="low"
                     draggable={false}
                     className="h-full w-full select-none object-cover object-center"
                   />
