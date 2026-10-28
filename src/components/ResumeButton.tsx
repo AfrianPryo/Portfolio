@@ -138,7 +138,7 @@ export default function ResumeButton({
           className="pointer-events-none absolute inset-x-3 -bottom-3 h-5 rounded-full blur-md transition-all duration-600 ease-out"
           style={{
             background: isHovered
-              ? "radial-gradient(ellipse at center, rgba(220,38,38,0.4) 0%, rgba(0,0,0,0.85) 60%, transparent 100%)"
+              ? "radial-gradient(ellipse at center, rgba(179,8,20,0.4) 0%, rgba(0,0,0,0.85) 60%, transparent 100%)"
               : "radial-gradient(ellipse at center, rgba(0,0,0,0.7) 0%, transparent 80%)",
             transform: isHovered
               ? "scale(1.1) translateY(4px) rotate(1.5deg)"
@@ -212,7 +212,7 @@ export default function ResumeButton({
             className="absolute inset-0"
             style={{
               background:
-                "radial-gradient(ellipse 110% 90% at 50% 50%, transparent 68%, rgba(255,50,50,0.28) 100%)",
+                "radial-gradient(ellipse 110% 90% at 50% 50%, transparent 68%, rgba(179,8,20,0.28) 100%)",
               mixBlendMode: "screen",
             }}
           />

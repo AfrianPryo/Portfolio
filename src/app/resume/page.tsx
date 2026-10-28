@@ -119,9 +119,9 @@ const HERO_WORD = "RESUME";
 const HERO_BLUR = [0, 0, 1, 2, 4, 6];
 const BLUR_STEP = 0.012;
 
-// Bingkai merah #e00000 di atas latar #080000, sama seperti Contact.
+// Bingkai merah #B30814 di atas latar #080000, sama seperti Contact.
 const FRAME =
-  "relative isolate overflow-hidden bg-[#e00000] text-white px-[6vw] py-[10vw] lg:px-[2vw] lg:py-[2vw]";
+  "relative isolate overflow-hidden bg-[#B30814] text-white px-[6vw] py-[10vw] lg:px-[2vw] lg:py-[2vw]";
 
 // Label kecil Switzer huruf kecil, ukuran disamakan dengan teks kecil Contact.
 const SMALL =
@@ -406,7 +406,7 @@ export default function ResumePage() {
                 data-anim="fade"
                 href="/resume.pdf"
                 download
-                className="group flex h-11 items-center bg-white px-4 font-switzer text-base lowercase tracking-[-0.05em] text-[#e00000] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[1.82vw] lg:px-[0.6vw] lg:text-[0.8vw]"
+                className="group flex h-11 items-center bg-white px-4 font-switzer text-base lowercase tracking-[-0.05em] text-[#B30814] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[1.82vw] lg:px-[0.6vw] lg:text-[0.8vw]"
               >
                 unduh resume
                 <span

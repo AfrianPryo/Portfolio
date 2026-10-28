@@ -240,7 +240,7 @@ export default function Hero() {
           {/* Logo Merah (Terisi Perlahan dari Bawah ke Atas) */}
           <div
             ref={fillLogoRef}
-            className="absolute inset-0 h-full w-full bg-flame drop-shadow-[0_0_24px_rgba(255,0,0,0.65)]"
+            className="absolute inset-0 h-full w-full bg-flame drop-shadow-[0_0_24px_rgba(179,8,20,0.65)]"
             style={{
               maskImage: "url('/logo.svg')",
               WebkitMaskImage: "url('/logo.svg')",

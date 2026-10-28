@@ -414,7 +414,7 @@ export default function Contact() {
       >
         <div
           data-frame
-          className="relative isolate flex w-full flex-col justify-between gap-10 overflow-hidden bg-[#e00000] text-white will-change-transform max-lg:min-h-[max(680px,100svh)] max-lg:px-[6vw] max-lg:py-[10vw] lg:block lg:aspect-[1366/803]"
+          className="relative isolate flex w-full flex-col justify-between gap-10 overflow-hidden bg-[#B30814] text-white will-change-transform max-lg:min-h-[max(680px,100svh)] max-lg:px-[6vw] max-lg:py-[10vw] lg:block lg:aspect-[1366/803]"
         >
           {/* Background: grain merah + figur + bintang (sudah menyatu di aset).
             Wrapper = parallax scroll, video = animasi entrance/exit (dipisah agar transform tidak bentrok). */}
@@ -535,7 +535,7 @@ export default function Contact() {
               />
               <button
                 type="submit"
-                className="group flex h-11 items-center bg-white px-4 font-switzer text-base lowercase tracking-[-0.05em] text-[#e00000] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[1.82vw] lg:px-[0.6vw] lg:text-[0.8vw]"
+                className="group flex h-11 items-center bg-white px-4 font-switzer text-base lowercase tracking-[-0.05em] text-[#B30814] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:h-[1.82vw] lg:px-[0.6vw] lg:text-[0.8vw]"
               >
                 submit
                 {/* Icon plus: muncul di sisi kanan saat hover/focus */}

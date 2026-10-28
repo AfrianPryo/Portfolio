@@ -86,14 +86,14 @@ const BG_TINY_WIDTH = 320;
 // Skills (warnanya sama), lalu elemen-elemennya muncul di latar itu. Keluar:
 // setelah kartu terakhir ada scroll tambahan (EXIT_SCREENS layar). Isi memudar
 // ke atas, lalu tangga hitam tumbuh dari kanan atas menutup layar.
-// Latar section: bg-[#e00000] (harus sama dengan COVER_COLOR di Skills).
+// Latar section merah brand yang sama dengan COVER_COLOR di Skills.
 // Scroll tambahan (layar) untuk animasi masuk (elemen muncul mengikuti scroll)
 // dan animasi keluar.
 const ENTRY_SCREENS = 0.7;
 // Panjang scroll (layar) fase tangga merah di akhir Skills. Harus sama dengan
 // COVER_SCREENS - COVER_LEAD di Skills.
 const STAIR_IN_SCREENS = 1.7;
-const BG_COLOR = "#e00000";
+const BG_COLOR = "#B30814";
 // Total scroll fase keluar. Bagian akhirnya (CONTACT_OVERLAP) dipakai Contact
 // untuk naik menimpa; animasi tangga hitam memakai sisanya
 // (EXIT_SCREENS - CONTACT_OVERLAP + ANIM_OVERLAP, minimal sekitar 0.5).

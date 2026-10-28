@@ -30,7 +30,7 @@ export default function OpenGraphImage() {
             display: "flex",
             alignItems: "center",
             gap: "16px",
-            color: "#ff2424",
+            color: "#B30814",
             fontSize: "24px",
             fontWeight: 700,
             letterSpacing: "0.18em",
@@ -41,7 +41,7 @@ export default function OpenGraphImage() {
               width: "14px",
               height: "14px",
               borderRadius: "50%",
-              background: "#ff2424",
+              background: "#B30814",
             }}
           />
           PORTOFOLIO
@@ -50,7 +50,7 @@ export default function OpenGraphImage() {
         <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
           <div
             style={{
-              color: "#ff2424",
+              color: "#B30814",
               fontSize: "70px",
               fontWeight: 700,
               lineHeight: 1,

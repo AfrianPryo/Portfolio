@@ -135,7 +135,7 @@ export default function SeeMoreCard({
           className="pointer-events-none absolute inset-x-3 -bottom-3 h-5 rounded-full blur-md transition-all duration-600 ease-out"
           style={{
             background: isHovered
-              ? "radial-gradient(ellipse at center, rgba(255,0,0,0.3) 0%, rgba(0,0,0,0.85) 60%, transparent 100%)"
+              ? "radial-gradient(ellipse at center, rgba(179,8,20,0.3) 0%, rgba(0,0,0,0.85) 60%, transparent 100%)"
               : "radial-gradient(ellipse at center, rgba(0,0,0,0.75) 0%, transparent 80%)",
             transform: isHovered
               ? "scale(1.1) translateY(4px) rotate(-1deg)"
@@ -209,7 +209,7 @@ export default function SeeMoreCard({
             className="absolute inset-0"
             style={{
               background:
-                "radial-gradient(ellipse 110% 90% at 50% 50%, transparent 68%, rgba(255,40,40,0.25) 100%)",
+                "radial-gradient(ellipse 110% 90% at 50% 50%, transparent 68%, rgba(179,8,20,0.25) 100%)",
               mixBlendMode: "screen",
             }}
           />

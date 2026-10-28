@@ -1,7 +1,7 @@
 /**
  * Simulasi fluida (Navier–Stokes, WebGL2) untuk efek "liquify" api yang mengikuti kursor.
  * Tanpa dependensi. Dye disimpan sebagai satu kanal (kepadatan), lalu diwarnai di shader
- * display memakai satu tone merah (#ff0000) dengan gradasi terang → inti gelap seperti api.
+ * display memakai satu tone merah (#B30814) dengan gradasi terang → inti gelap seperti api.
  */
 
 export type FlameOptions = {
@@ -110,7 +110,7 @@ const CLEAR = HEAD + `
 uniform sampler2D uTexture; uniform float uValue;
 void main(){ o = uValue*texture(uTexture,vUv); }`;
 
-// Satu tone merah: tepi lebih terang/transparan → badan #ff0000 → inti sedikit lebih gelap
+// Satu tone merah: tepi lebih terang/transparan → badan #B30814 → inti sedikit lebih gelap
 const DISPLAY = HEAD + `
 uniform sampler2D uDye; uniform float uTime; uniform float uAspect;
 float h(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
@@ -125,9 +125,9 @@ void main(){
   d *= .72 + .56*n;                                // lidah api bergetar
   float a = smoothstep(.07,.5,d);
   float core = smoothstep(.55,1.5,d);
-  vec3 outer = vec3(1.,.16,.10);                   // tepi: merah lebih terang
-  vec3 body  = vec3(1.,0.,0.);                     // #ff0000
-  vec3 deep  = vec3(.74,0.,0.);                    // inti: merah lebih dalam
+  vec3 body  = vec3(179.,8.,20.) / 255.;           // #B30814
+  vec3 outer = mix(body, vec3(1.), .3);            // tepi: merah lebih terang
+  vec3 deep  = body * .74;                         // inti: merah lebih dalam
   vec3 col = mix(outer, body, smoothstep(.1,.55,d));
   col = mix(col, deep, core);
   a *= .7;
