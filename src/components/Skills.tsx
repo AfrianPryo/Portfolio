@@ -981,7 +981,7 @@ export default function Skills() {
               key={skill.title}
               aria-hidden={index !== activeIndex}
               aria-label={skill.title}
-              className="skills-title col-start-1 row-start-1 font-acerok text-[clamp(24px,3.2vw,62px)] font-normal uppercase leading-[0.92] tracking-[-0.07em] text-left text-[#ff6a5c] [text-shadow:0_2px_20px_rgba(10,3,3,0.45)] max-sm:text-center max-sm:text-[clamp(26px,8vw,40px)]"
+              className="skills-title col-start-1 row-start-1 font-acerok text-[clamp(24px,3.2vw,62px)] font-normal uppercase leading-[0.92] tracking-[-0.07em] text-left text-[#D30000] [text-shadow:0_2px_20px_rgba(10,3,3,0.45)] max-sm:text-center max-sm:text-[clamp(26px,8vw,40px)]"
             >
               <span aria-hidden="true" className="block">
                 {skill.title.split(" ").map((word, wordIndex, words) => (
@@ -1015,7 +1015,7 @@ export default function Skills() {
             <p
               key={skill.title}
               aria-hidden={index !== activeIndex}
-              className="skills-desc col-start-1 row-start-1 text-right font-switzer text-[clamp(11px,1.2vw,24px)] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-[#ff6a5c] [text-shadow:0_2px_16px_rgba(10,3,3,0.45)] max-sm:text-center max-sm:text-[13px]"
+              className="skills-desc col-start-1 row-start-1 text-right font-switzer text-[clamp(11px,1.2vw,24px)] font-medium lowercase leading-[1.1] tracking-[-0.05em] text-[#D30000] [text-shadow:0_2px_16px_rgba(10,3,3,0.45)] max-sm:text-center max-sm:text-[13px]"
             >
               <span className="block">
                 {skill.description.split(" ").map((word, wordIndex, words) => (
