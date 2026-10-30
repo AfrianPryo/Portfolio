@@ -23,7 +23,6 @@ export const metadata: Metadata = {
     "Portofolio UI/UX",
     "Portofolio Web Developer",
     "Laravel Developer",
-    "React Developer",
   ],
   alternates: {
     canonical: "/",

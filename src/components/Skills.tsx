@@ -22,7 +22,7 @@ const SKILLS = [
     title: "FULLSTACK DEVELOPMENT",
     photo: "/skills/dummy-2.jpg",
     description:
-      "Membangun aplikasi web modern dengan React, Laravel, dan MySQL, dari tampilan sampai database.",
+      "Membangun aplikasi web modern dengan Laravel, dan MySQL, dari tampilan sampai database.",
   },
   {
     title: "GRAPHIC DESIGN",

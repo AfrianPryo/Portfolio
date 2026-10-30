@@ -25,7 +25,7 @@ const PHONE = "+62 882 3895 9665";
 const BG_SRC = "/contact-bg.mp4";
 
 const about =
-  "Siswa PPLG di SMKN 1 Bangsri yang berfokus sebagai UI/UX Designer dan Junior Fullstack Developer. Berpengalaman merancang desain antarmuka pengguna serta mengembangkan aplikasi web modern dengan React, Laravel, dan MySQL. Berkomitmen untuk terus belajar, berkolaborasi dalam tim, dan menghasilkan produk digital yang responsif serta berorientasi pada pengalaman pengguna.";
+  "Siswa PPLG di SMKN 1 Bangsri yang berfokus sebagai UI/UX Designer dan Junior Fullstack Developer. Berpengalaman merancang desain antarmuka pengguna serta mengembangkan aplikasi web modern dengan Laravel, dan MySQL. Berkomitmen untuk terus belajar, berkolaborasi dalam tim, dan menghasilkan produk digital yang responsif serta berorientasi pada pengalaman pengguna.";
 
 type Entry = {
   title: string;

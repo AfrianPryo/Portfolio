@@ -71,10 +71,9 @@ const highlights = [
     edge: 70.3,
     top: 70.5,
     lines: [
-      "Kini: Merancang dan membuat",
+      "Merancang dan membuat",
       "website Manajemen Usaha Mandiri",
-      "SMKN 1 Bangsri",
-      "bersama tim ARG",
+      "SMKN 1 Bangsri bersama tim ARG",
     ],
   },
 ] as const;
