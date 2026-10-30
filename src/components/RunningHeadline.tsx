@@ -116,7 +116,7 @@ export default function RunningHeadline() {
         ref={textRef}
         className="whitespace-nowrap font-switzer text-[clamp(68px,12vw,185px)] font-normal uppercase tracking-tight leading-none text-white drop-shadow-[0_8px_32px_rgba(0,0,0,0.55)] will-change-transform"
       >
-        AFRIAN PRYO SULISTYANNO
+        A WORK IN PROGRESS.
       </h1>
     </div>
   );
